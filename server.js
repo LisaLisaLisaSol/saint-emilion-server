@@ -1,15 +1,19 @@
-// Saint Emilion — VesselAPI proxy
-const http = require('http');
+// Saint Emilion — Proxy server with aisstream.io primary + fallbacks
+const http  = require('http');
 const https = require('https');
+const WebSocket = require('ws');
 
-const PORT = process.env.PORT || 3000;
+const PORT          = process.env.PORT          || 3000;
+const AISSTREAM_KEY = process.env.AISSTREAM_KEY || '';
 const VESSELAPI_KEY = process.env.VESSELAPI_KEY || '';
 const ANTHROPIC_KEY = process.env.ANTHROPIC_KEY || '';
-const MMSI = '367399980';
+const MMSI          = '367399980';
 
-// Rate limit state — stops all calls when quota is hit
-let vesselApiKilled = false;
-let vesselApiRetryAfter = 0; // timestamp when we can retry
+// ── AISstream cached position ─────────────────────────────────────────────────
+let aisCache = null;          // { lat, lng, sog, cog, nav, updated, ts }
+let aisConnected = false;
+let aisWs = null;
+let aisReconnectTimer = null;
 
 const NAV = {
   0:'Underway',1:'At Anchor',2:'Not Under Command',3:'Restricted',
@@ -22,24 +26,107 @@ function setCORS(res) {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 }
 
-function httpsGet(url) {
-  return new Promise((resolve, reject) => {
-    https.get(url, { headers: { 'User-Agent': 'SaintEmilionTracker/1.0' } }, (res) => {
-      let data = '';
-      res.on('data', chunk => data += chunk);
-      res.on('end', () => resolve({ status: res.statusCode, body: data }));
-    }).on('error', reject);
+// ── AISstream persistent connection ──────────────────────────────────────────
+function connectAisstream() {
+  if (!AISSTREAM_KEY) {
+    console.log('No AISSTREAM_KEY — skipping aisstream');
+    return;
+  }
+  if (aisWs) {
+    try { aisWs.terminate(); } catch(_) {}
+    aisWs = null;
+  }
+
+  console.log('Connecting to aisstream.io…');
+  const ws = new WebSocket('wss://stream.aisstream.io/v0/stream');
+  aisWs = ws;
+
+  ws.on('open', () => {
+    aisConnected = true;
+    console.log('aisstream connected — subscribing MMSI ' + MMSI);
+    ws.send(JSON.stringify({
+      Apikey: AISSTREAM_KEY,
+      BoundingBoxes: [[[-90, -180], [90, 180]]],  // world bbox — MMSI filter handles the rest
+      FiltersShipMMSI: [MMSI],
+      FilterMessageTypes: ['PositionReport', 'ShipStaticData']
+    }));
+  });
+
+  ws.on('message', (data) => {
+    try {
+      const msg = JSON.parse(data.toString());
+
+      if (msg.error || msg.Error) {
+        console.error('aisstream error:', msg.error || msg.Error);
+        return;
+      }
+
+      if (msg.MessageType === 'PositionReport') {
+        const pr   = msg.Message.PositionReport;
+        const meta = msg.MetaData || {};
+        const lat  = pr.Latitude;
+        const lng  = pr.Longitude;
+
+        // Guard against invalid positions
+        if (!lat || !lng || lat === 0 || lng === 0) return;
+
+        aisCache = {
+          lat:  parseFloat(lat.toFixed(5)),
+          lng:  parseFloat(lng.toFixed(5)),
+          sog:  parseFloat((pr.Sog || 0).toFixed(1)),
+          cog:  parseFloat((pr.Cog || 0).toFixed(0)),
+          nav:  NAV[pr.NavigationalStatus] || 'Unknown',
+          location: `${lat.toFixed(4)}°N ${Math.abs(lng).toFixed(4)}°W`,
+          updated: meta.time_utc || new Date().toISOString(),
+          ts: Date.now(),
+          source: 'aisstream.io'
+        };
+        aisCache.summary = `Saint Emilion: ${aisCache.location} · ${aisCache.sog} kn · ${aisCache.cog}° · ${aisCache.nav}`;
+        console.log('aisstream position:', aisCache.summary);
+      }
+    } catch(e) {
+      console.error('aisstream parse error:', e.message);
+    }
+  });
+
+  ws.on('close', (code) => {
+    aisConnected = false;
+    aisWs = null;
+    // aisstream periodically drops connections — always reconnect
+    const delay = (code === 4001 || code === 4003 || code === 1008) ? 60000 : 8000;
+    if (code === 4001 || code === 4003 || code === 1008) {
+      console.error('aisstream auth rejected (code', code, ') — check AISSTREAM_KEY');
+    } else {
+      console.log(`aisstream closed (${code}) — reconnecting in ${delay/1000}s`);
+    }
+    aisReconnectTimer = setTimeout(connectAisstream, delay);
+  });
+
+  ws.on('error', (err) => {
+    console.error('aisstream ws error:', err.message);
+    aisConnected = false;
   });
 }
 
+// ── VesselAPI quota state ────────────────────────────────────────────────────
+let vesselApiKilled = false;
+let vesselApiRetryAfter = 0;
+
+// ── HTTP Server ──────────────────────────────────────────────────────────────
 const httpServer = http.createServer(async (req, res) => {
   setCORS(res);
 
   if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
 
   if (req.method === 'GET') {
-    res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('Saint Emilion proxy OK'); return;
+    const status = {
+      aisstream: aisConnected ? 'connected' : 'disconnected',
+      aisCacheAge: aisCache ? Math.round((Date.now() - aisCache.ts) / 1000) + 's ago' : 'none',
+      vesselApiKilled,
+    };
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(status));
+    return;
   }
 
   if (req.method !== 'POST' || req.url !== '/fetch') {
@@ -49,98 +136,70 @@ const httpServer = http.createServer(async (req, res) => {
   console.log('Fetch request received');
 
   try {
-    // ── Try VesselAPI first ──────────────────────────────
-    if (VESSELAPI_KEY && !vesselApiKilled) {
-      // Check if we're in a retry cooldown
-      if (Date.now() < vesselApiRetryAfter) {
-        const waitMin = Math.ceil((vesselApiRetryAfter - Date.now()) / 60000);
-        console.log(`VesselAPI in cooldown — ${waitMin}m remaining`);
-        broadcast({ type: 'quota', message: `VesselAPI suspended — retry in ${waitMin} minutes`, retryAt: vesselApiRetryAfter });
-      } else {
-        console.log('Trying VesselAPI...');
-      // Correct VesselAPI endpoint: /v1/vessel/{id}/position?filter.idType=mmsi
+    // ── 1. aisstream cache (best — real-time, free) ──────────────────────────
+    if (aisCache && (Date.now() - aisCache.ts) < 600000) {  // within 10 min
+      console.log('Serving from aisstream cache, age:', Math.round((Date.now()-aisCache.ts)/1000)+'s');
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ content: [{ type: 'text', text: JSON.stringify(aisCache) }] }));
+      return;
+    }
+
+    // ── 2. VesselAPI ─────────────────────────────────────────────────────────
+    if (VESSELAPI_KEY && !vesselApiKilled && Date.now() >= vesselApiRetryAfter) {
+      console.log('Trying VesselAPI…');
       const url = `https://api.vesselapi.com/v1/vessel/${MMSI}/position?filter.idType=mmsi`;
       const r = await new Promise((resolve, reject) => {
         https.get(url, {
-          headers: {
-            'Authorization': `Bearer ${VESSELAPI_KEY}`,
-            'User-Agent': 'SaintEmilionTracker/1.0'
-          }
+          headers: { 'Authorization': `Bearer ${VESSELAPI_KEY}`, 'User-Agent': 'SaintEmilionTracker/1.0' }
         }, (res) => {
           let data = '';
-          res.on('data', chunk => data += chunk);
+          res.on('data', c => data += c);
           res.on('end', () => resolve({ status: res.statusCode, body: data }));
         }).on('error', reject);
       });
-      console.log('VesselAPI status:', r.status, r.body.slice(0, 200));
 
       if (r.status === 200) {
         const d = JSON.parse(r.body);
-        // VesselAPI wraps response in vesselPosition
         const v = d.vesselPosition || d;
         const lat = v.latitude || v.lat;
         const lng = v.longitude || v.lng || v.lon;
-        const sog = v.sog || v.speed || v.speedOverGround || 0;
-        const cog = v.cog || v.course || v.courseOverGround || 0;
-        const nav = NAV[v.navigationalStatus || v.navStatus || v.nav_status] || v.status || 'Underway';
-        const ts  = v.timestamp || v.updated || new Date().toISOString();
-
         if (lat && lng) {
           const result = {
-            lat: parseFloat(lat),
-            lng: parseFloat(lng),
-            sog: parseFloat(sog),
-            cog: parseFloat(cog),
-            nav,
+            lat: parseFloat(lat), lng: parseFloat(lng),
+            sog: parseFloat(v.sog || v.speed || 0),
+            cog: parseFloat(v.cog || v.course || 0),
+            nav: NAV[v.navigationalStatus] || 'Underway',
             location: `${parseFloat(lat).toFixed(4)}°N ${Math.abs(parseFloat(lng)).toFixed(4)}°W`,
-            updated: ts,
-            summary: `Saint Emilion is at ${parseFloat(lat).toFixed(4)}°N ${Math.abs(parseFloat(lng)).toFixed(4)}°W making ${parseFloat(sog).toFixed(1)} kn on course ${parseFloat(cog).toFixed(0)}°.`,
+            updated: v.timestamp || new Date().toISOString(),
             source: 'VesselAPI'
           };
-          console.log('VesselAPI success:', result);
+          result.summary = `Saint Emilion: ${result.location} · ${result.sog} kn`;
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ content: [{ type: 'text', text: JSON.stringify(result) }] }));
           return;
         }
       }
-
-      // Detect quota/rate limit errors — stop polling
       if (r.status === 429 || r.status === 403) {
-        let retrySeconds = 3600; // default 1 hour
-        try {
-          const errBody = JSON.parse(r.body);
-          const msg = errBody?.error?.message || '';
-          const match = msg.match(/Retry after (\d+) seconds/i);
-          if (match) retrySeconds = parseInt(match[1]);
-        } catch(_) {}
-        vesselApiRetryAfter = Date.now() + (retrySeconds * 1000);
-        const retryMin = Math.ceil(retrySeconds / 60);
-        console.log(`VesselAPI quota hit — suspended for ${retryMin} minutes`);
-        broadcast({ type: 'quota', message: `VesselAPI quota reached — auto-polling stopped for ${retryMin} min`, retryAt: vesselApiRetryAfter });
-      } else if (r.status !== 200) {
-        console.log('VesselAPI failed:', r.status, r.body.slice(0, 300));
+        vesselApiRetryAfter = Date.now() + 3600000;
+        console.log('VesselAPI quota hit — cooling down 1h');
       }
-      } // end cooldown else
     }
 
-    // ── Fallback to Anthropic web search ─────────────────
+    // ── 3. Anthropic web search fallback ─────────────────────────────────────
     if (ANTHROPIC_KEY) {
-      console.log('Falling back to Anthropic search...');
+      console.log('Falling back to Anthropic web search…');
       const payload = JSON.stringify({
         model: 'claude-sonnet-4-20250514',
         max_tokens: 1000,
         tools: [{ type: 'web_search_20250305', name: 'web_search' }],
         messages: [{
           role: 'user',
-          content: `Fetch https://www.myshiptracking.com/vessels/saint-emilion-mmsi-367399980-imo-8741832 and extract the current position of SAINT EMILION MMSI 367399980. Return ONLY this JSON: {"lat":0.0,"lng":0.0,"sog":0.0,"cog":0,"nav":"status","location":"description","updated":"time","summary":"one sentence"} or {"error":"not found","summary":"explanation"}`
+          content: `Search for the current position of vessel SAINT EMILION MMSI 367399980 on VesselFinder or MarineTraffic. Return ONLY this JSON: {"lat":0.0,"lng":0.0,"sog":0.0,"cog":0,"nav":"status","location":"description","updated":"time","summary":"one sentence"} or {"error":"not found","summary":"explanation"}`
         }]
       });
-
       const result = await new Promise((resolve, reject) => {
         const options = {
-          hostname: 'api.anthropic.com',
-          path: '/v1/messages',
-          method: 'POST',
+          hostname: 'api.anthropic.com', path: '/v1/messages', method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'x-api-key': ANTHROPIC_KEY,
@@ -150,24 +209,22 @@ const httpServer = http.createServer(async (req, res) => {
         };
         const proxyReq = https.request(options, (proxyRes) => {
           let data = '';
-          proxyRes.on('data', chunk => data += chunk);
+          proxyRes.on('data', c => data += c);
           proxyRes.on('end', () => resolve({ status: proxyRes.statusCode, body: data }));
         });
         proxyReq.on('error', reject);
         proxyReq.write(payload);
         proxyReq.end();
       });
-
       res.writeHead(result.status, { 'Content-Type': 'application/json' });
       res.end(result.body);
       return;
     }
 
-    // No keys configured
     res.writeHead(500, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'No API keys configured' }));
 
-  } catch (e) {
+  } catch(e) {
     console.error('Error:', e.message);
     res.writeHead(502, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: e.message }));
@@ -176,6 +233,9 @@ const httpServer = http.createServer(async (req, res) => {
 
 httpServer.listen(PORT, () => {
   console.log(`Listening on port ${PORT}`);
-  console.log('VesselAPI key:', VESSELAPI_KEY ? '✓ set' : '✗ missing');
-  console.log('Anthropic key:', ANTHROPIC_KEY ? '✓ set' : '✗ missing');
+  console.log('AISSTREAM_KEY:', AISSTREAM_KEY ? '✓ set' : '✗ missing');
+  console.log('VESSELAPI_KEY:', VESSELAPI_KEY ? '✓ set' : '✗ missing');
+  console.log('ANTHROPIC_KEY:', ANTHROPIC_KEY ? '✓ set' : '✗ missing');
+  // Start aisstream connection
+  connectAisstream();
 });
