@@ -510,8 +510,10 @@ function tugIcon(color, size, label){
 function rotateMarker(mkr, deg){
   const el=mkr.getElement(); if(!el)return;
   const svg=el.querySelector('svg'); if(!svg)return;
+  // Rotate only the SVG so the label above stays upright
   svg.style.transform=`rotate(${deg}deg)`;
   svg.style.transformOrigin='center center';
+  svg.style.display='block'; // ensure transform applies correctly
 }
 
 // ── State ─────────────────────────────────────────────────────────────
@@ -543,7 +545,25 @@ function placeSaint(lat, lng, cog, sog, nav, apiTs, isStale){
     if(followMode && !isStale) map.panTo(ll,{animate:true,duration:1});
   }
   rotateMarker(saintMarker, cog||0);
-  if(!isStale) trail.addLatLng(ll); // don't add stale positions to trail
+  if(!isStale) {
+    // Route trail segment through Hudson centerline waypoints
+    // to keep the path in the water between fixes
+    const prevPts = trail.getLatLngs();
+    if (prevPts.length > 0) {
+      const prev = prevPts[prevPts.length - 1];
+      const startIdx = nearestHudsonIdx(prev.lat, prev.lng);
+      const endIdx   = nearestHudsonIdx(lat, lng);
+      if (startIdx !== endIdx) {
+        const step = endIdx > startIdx ? 1 : -1;
+        let i = startIdx;
+        while (i !== endIdx) {
+          i += step;
+          trail.addLatLng(HUDSON[i]);
+        }
+      }
+    }
+    trail.addLatLng(ll);
+  }
 
   // Place a start marker on the first position of a voyage
   if (trail.getLatLngs().length === 1) {
@@ -599,16 +619,47 @@ function placeSaint(lat, lng, cog, sog, nav, apiTs, isStale){
 // ── Dead Reckoning ────────────────────────────────────────────────────
 // Projects estimated position forward from last AIS fix using speed + course
 // Hudson River centerline waypoints (south to north)
+// Hudson River centerline — dense waypoints traced along navigation channel
+// South (Linden/Kill Van Kull) to North (Port of Albany)
 const HUDSON = [
-  [40.5030,-74.2750],[40.6520,-74.0170],[40.6574,-74.1130],
-  [40.6900,-74.0200],[40.7300,-74.0150],[40.7680,-74.0050],
-  [40.8000,-73.9900],[40.8510,-73.9520],[40.9340,-73.9150],
-  [40.9800,-73.9050],[41.0600,-73.9100],[41.1800,-73.9200],
-  [41.2900,-73.9600],[41.3700,-73.9550],[41.4200,-73.9700],
-  [41.5030,-74.0080],[41.5800,-73.9700],[41.7200,-73.9600],
-  [41.8500,-73.9500],[41.9230,-73.9750],[42.0200,-73.9600],
-  [42.1500,-73.9500],[42.2500,-73.9200],[42.3500,-73.8800],
-  [42.5000,-73.8000],[42.6400,-73.7500]
+  // Kill Van Kull / Upper Bay approach
+  [40.5030,-74.2750],[40.5250,-74.2200],[40.5500,-74.1500],
+  [40.5750,-74.1000],[40.6100,-74.0500],[40.6374,-74.0350],
+  // Bayonne / Jersey City
+  [40.6574,-74.0580],[40.6750,-74.0200],[40.6900,-74.0050],
+  // Upper NY Harbor
+  [40.7050,-74.0000],[40.7200,-74.0000],[40.7400,-73.9900],
+  // George Washington Bridge area
+  [40.7680,-73.9800],[40.7850,-73.9700],[40.8000,-73.9700],
+  // Yonkers
+  [40.8200,-73.9620],[40.8510,-73.9520],[40.8750,-73.9450],
+  [40.9050,-73.9300],[40.9340,-73.9150],[40.9600,-73.9100],
+  // Tappan Zee / Tarrytown
+  [41.0000,-73.9100],[41.0450,-73.9050],[41.0800,-73.9150],
+  [41.1100,-73.9200],[41.1500,-73.9250],[41.1800,-73.9300],
+  // Haverstraw Bay (widens significantly)
+  [41.2100,-73.9500],[41.2500,-73.9700],[41.2900,-73.9800],
+  // Storm King / Cornwall
+  [41.3200,-73.9700],[41.3700,-73.9650],[41.4000,-73.9700],
+  // Newburgh / Beacon (sharp bend)
+  [41.4400,-73.9850],[41.5030,-74.0080],[41.5300,-74.0100],
+  // Poughkeepsie
+  [41.5800,-73.9800],[41.6200,-73.9700],[41.6800,-73.9600],
+  // Hyde Park / Rhinecliff
+  [41.7200,-73.9500],[41.7600,-73.9400],[41.8000,-73.9400],
+  // Kingston / Rondout Creek
+  [41.8500,-73.9500],[41.9000,-73.9600],[41.9230,-73.9750],
+  // Catskill
+  [41.9800,-73.9650],[42.0200,-73.9550],[42.0600,-73.9500],
+  // Hudson / Greenport
+  [42.1000,-73.9500],[42.1500,-73.9450],[42.2000,-73.9300],
+  // Coxsackie / New Baltimore
+  [42.2500,-73.9150],[42.3000,-73.8900],[42.3500,-73.8800],
+  // Ravena approach
+  [42.4000,-73.8600],[42.4500,-73.8200],[42.5000,-73.8000],
+  // Port of Albany
+  [42.5500,-73.7800],[42.6000,-73.7600],[42.6400,-73.7500],
+  [42.6800,-73.7450],[42.7200,-73.7400]
 ];
 
 // Find nearest Hudson waypoint to a lat/lng
@@ -945,8 +996,10 @@ function replayRoute(route, btn){
     replayMarker.setLatLng(smooth[i]);
     if(i<smooth.length-1){
       const a=smooth[i],b=smooth[i+1];
-      const bear=(Math.atan2(b[1]-a[1],b[0]-a[0])*180/Math.PI+360)%360;
-      rotateMarker(replayMarker,(bear-90+360)%360);
+      // atan2(dLng, dLat) → geographic bearing where 0=north, 90=east
+      // SVG arrow points north by default, so rotate(COG) is correct
+      const geoBear = (Math.atan2(b[1]-a[1], b[0]-a[0]) * 180/Math.PI + 360) % 360;
+      rotateMarker(replayMarker, geoBear);
     }
     if(i%8===0) map.panTo(smooth[i],{animate:true,duration:.2});
     i++; requestAnimationFrame(step);
