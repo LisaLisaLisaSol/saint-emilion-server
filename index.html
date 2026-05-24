@@ -530,18 +530,20 @@ const lkMarker = L.marker([40.9340,-73.9150],{
 lkMarker.bindPopup(`<div style="font-family:Inter,sans-serif"><b>Saint Emilion</b><br><span style="font-size:11px;color:#888">📍 Last known · Yonkers, mid-river<br>Heading N · 7.0 kn<br><span style="color:#f5a623">Tap Fetch Live Position for current location</span></span></div>`,{closeButton:false});
 
 // ── Place marker on map ───────────────────────────────────────────────
-function placeSaint(lat, lng, cog, sog, nav, apiTs){
+function placeSaint(lat, lng, cog, sog, nav, apiTs, isStale){
   const ll=[lat,lng];
+  const markerColor = isStale ? '#9aa0a6' : '#00b7d9'; // grey when stale, cyan when live
   if(!saintMarker){
     lkMarker.remove();
-    saintMarker=L.marker(ll,{icon:tugIcon('#00b7d9',52,'ST. EMILION'),zIndexOffset:9999}).addTo(map);
-    if(followMode) map.setView(ll,13);
+    saintMarker=L.marker(ll,{icon:tugIcon(markerColor,52,'ST. EMILION'),zIndexOffset:9999}).addTo(map);
+    if(followMode && !isStale) map.setView(ll,13);
   } else {
     saintMarker.setLatLng(ll);
-    if(followMode) map.panTo(ll,{animate:true,duration:1});
+    saintMarker.setIcon(tugIcon(markerColor,52,'ST. EMILION'));
+    if(followMode && !isStale) map.panTo(ll,{animate:true,duration:1});
   }
   rotateMarker(saintMarker, cog||0);
-  trail.addLatLng(ll);
+  if(!isStale) trail.addLatLng(ll); // don't add stale positions to trail
 
   // Place a start marker on the first position of a voyage
   if (trail.getLatLngs().length === 1) {
@@ -567,8 +569,13 @@ function placeSaint(lat, lng, cog, sog, nav, apiTs){
   lastFix = {lat, lng, sog:sog||0, cog:cog||0, ts:fixTime};
 
   // Banner
-  document.getElementById('banner-sub').textContent = `${lat.toFixed(4)}°N  ${Math.abs(lng).toFixed(4)}°W`;
-  document.getElementById('banner-live').classList.add('on');
+  if (isStale) {
+    document.getElementById('banner-sub').textContent = `Last known · ${lat.toFixed(4)}°N ${Math.abs(lng).toFixed(4)}°W`;
+    document.getElementById('banner-live').classList.remove('on');
+  } else {
+    document.getElementById('banner-sub').textContent = `${lat.toFixed(4)}°N  ${Math.abs(lng).toFixed(4)}°W`;
+    document.getElementById('banner-live').classList.add('on');
+  }
 
   // Last pos card
   document.getElementById('last-pos').classList.add('on');
@@ -783,8 +790,8 @@ function updateLiveVoyageCard() {
   renderRoutes();
 }
 
-function placeSaintAndRecord(lat,lng,cog,sog,nav,apiTs){
-  placeSaint(lat,lng,cog,sog,nav,apiTs);
+function placeSaintAndRecord(lat,lng,cog,sog,nav,apiTs,isStale){
+  placeSaint(lat,lng,cog,sog,nav,apiTs,isStale);
   recordPosition(lat,lng,sog,nav,apiTs);
 }
 
@@ -794,14 +801,14 @@ async function fetchLivePosition(){
   const resultBox=document.getElementById('ai-result'); // always visible now
   const aiText=document.getElementById('ai-text');
 
-  btn.disabled=true; btn.textContent='🔄 Searching…';
-  status.textContent='Checking AIS databases…';
-  log('Fetching live position via AI search…');
+  btn.disabled=true; btn.textContent='Fetching…';
+  status.textContent='Contacting AIS server…';
+  log('Requesting position…');
 
   try{
     // Call our Render proxy which forwards to Anthropic securely
     const PROXY = 'https://saint-emilion-server.onrender.com/fetch';
-    status.textContent = 'Contacting server… (may take 15–20s)';
+    status.textContent = 'Waiting for AIS response…';
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 30000); // 30s timeout
     let res;
@@ -846,32 +853,45 @@ async function fetchLivePosition(){
     }
 
     if(parsed && parsed.lat && parsed.lng && !parsed.error){
-      // Got coordinates — place on map
-      // Parse API timestamp - VesselAPI returns ISO format
+      const isStale = !!parsed.stale;
+      const staleLabel = isStale ? ` (last known · ${parsed.staleMinutes}min ago)` : '';
+
+      // Place on map — stale positions shown with dimmed marker
       let apiTs = null;
       if (parsed.updated) {
         const t = new Date(parsed.updated);
         apiTs = isNaN(t.getTime()) ? null : t.getTime();
-        if (apiTs) log('AIS fix timestamp: ' + t.toLocaleString());
       }
-      placeSaintAndRecord(parsed.lat, parsed.lng, parsed.cog||0, parsed.sog||0, parsed.nav||'Unknown', apiTs);
+      placeSaintAndRecord(parsed.lat, parsed.lng, parsed.cog||0, parsed.sog||0, parsed.nav||'Unknown', apiTs, isStale);
 
-      // Update last pos card
-      document.getElementById('lp-loc').textContent = parsed.location || `${parsed.lat.toFixed(4)}°N ${Math.abs(parsed.lng).toFixed(4)}°W`;
-      document.getElementById('lp-detail').textContent = `${parsed.sog||'—'} kn · ${parsed.cog||'—'}° · ${parsed.nav||'—'} · ${parsed.updated||''}`;
+      // Update header last-pos strip
+      document.getElementById('lp-loc').textContent = (parsed.location || `${parsed.lat.toFixed(4)}°N ${Math.abs(parsed.lng).toFixed(4)}°W`) + (isStale ? ' · last known' : '');
+      document.getElementById('lp-detail').textContent = `${parsed.sog||'—'} kn · ${parsed.cog||'—'}° · ${parsed.nav||'—'}${staleLabel}`;
 
-      status.textContent = '✓ Position updated — ' + (parsed.location||'');
-      log(`✓ Position: ${parsed.lat.toFixed(4)}°N ${Math.abs(parsed.lng).toFixed(4)}°W · ${parsed.sog} kn · ${parsed.nav}`);
+      // Status bar
+      if (isStale) {
+        status.textContent = `Last known position ${parsed.staleMinutes}min ago — awaiting new signal`;
+        log(`Last known: ${parsed.lat.toFixed(4)}°N ${Math.abs(parsed.lng).toFixed(4)}°W · ${parsed.staleMinutes}min ago`);
+      } else {
+        status.textContent = 'Position updated — ' + (parsed.location||'');
+        log(`Position: ${parsed.lat.toFixed(4)}°N ${Math.abs(parsed.lng).toFixed(4)}°W · ${parsed.sog} kn · ${parsed.nav}`);
+      }
 
       resultBox.classList.add('on');
-      aiText.textContent = parsed.summary || `Saint Emilion is at ${parsed.location}, making ${parsed.sog} kn on course ${parsed.cog}°.`;
+      aiText.textContent = parsed.summary || `Saint Emilion: ${parsed.location} · ${parsed.sog} kn · ${parsed.nav}`;
     } else {
       // No coordinates but got a response
       const summary = parsed?.summary || raw.slice(0,300);
-      status.textContent = 'Position not available right now';
+      const isWaiting = summary.toLowerCase().includes('waiting for vessel') || summary.toLowerCase().includes('ais network');
+      if (isWaiting) {
+        status.textContent = 'AIS connected — awaiting signal from vessel';
+        log('Waiting for vessel broadcast…');
+      } else {
+        status.textContent = 'Position not available right now';
+        log('No position: ' + summary.slice(0,60));
+      }
       resultBox.classList.add('on');
       aiText.textContent = summary;
-      log('Position not found: ' + summary.slice(0,80));
     }
 
   } catch(e){
