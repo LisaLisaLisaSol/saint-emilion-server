@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Saint Emilion · Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Bebas+Neue&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#eef4f8;
+  --card:#fff;
+  --border:#dbe7f0;
+  --text:#14202b;
+  --muted:#698197;
+  --accent:#00b7d9;
+  --live:#18c37e;
+  --warn:#f5a623;
+  --danger:#e05;
+}
+body{font-family:Inter,sans-serif;background:var(--bg);color:var(--text);overflow:hidden}
+#app{display:grid;grid-template-columns:320px 1fr;height:100vh}
+
+/* ── Sidebar ── */
+#sidebar{background:#fff;border-right:1px solid var(--border);display:flex;flex-direction:column;overflow-y:auto}
+
+#hdr{padding:20px;border-bottom:1px solid var(--border)}
+.eyebrow{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-bottom:4px}
+.vname{font-family:"Bebas Neue",sans-serif;font-size:44px;line-height:1;color:var(--text)}
+.vmeta{font-size:11px;color:var(--muted);margin-top:4px}
+#last-pos{margin-top:12px;padding:10px 12px;background:#f4f9fc;border:1px solid var(--border);border-radius:10px;font-size:12px;color:var(--muted);line-height:1.6;display:none}
+#last-pos.on{display:block}
+#last-pos strong{color:var(--text);font-weight:600}
+
+/* Fetch button */
+#fetch-wrap{padding:14px 20px;border-bottom:1px solid var(--border)}
+#btn-fetch{width:100%;padding:13px;background:var(--accent);color:#fff;border:none;border-radius:11px;font-size:14px;font-weight:700;cursor:pointer;transition:opacity .15s;display:flex;align-items:center;justify-content:center;gap:8px}
+#btn-fetch:hover{opacity:.9}
+#btn-fetch:disabled{opacity:.5;cursor:wait}
+#fetch-status{margin-top:8px;font-size:11px;color:var(--muted);text-align:center;min-height:16px}
+
+/* Stats */
+.sec{padding:16px 20px;border-bottom:1px solid var(--border)}
+.sec-title{font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+.stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.stat{background:#f8fbfd;border:1px solid var(--border);border-radius:10px;padding:10px 12px}
+.stat.hi{background:rgba(0,183,217,.07);border-color:rgba(0,183,217,.3)}
+.stat-lbl{font-size:10px;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:.07em}
+.stat-val{font-size:20px;font-weight:700;color:var(--text)}
+.stat.hi .stat-val{color:var(--accent)}
+.stat-sub{font-size:10px;color:var(--muted);margin-top:1px}
+
+/* Voyages */
+.route{padding:10px 12px;border:1px solid var(--border);border-radius:10px;margin-bottom:8px;background:#f9fcff;cursor:default}
+.route-name{font-size:13px;font-weight:700;margin-bottom:3px;display:flex;align-items:center;gap:7px}
+.route-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0}
+.route-meta{font-size:11px;color:var(--muted);margin-bottom:8px}
+.route-btns{display:flex;gap:6px}
+.rbtn{padding:6px 11px;border:1px solid var(--border);border-radius:8px;font-size:11px;font-weight:600;cursor:pointer;background:#fff;font-family:Inter,sans-serif;transition:all .15s}
+.rbtn:hover{border-color:var(--accent);color:var(--accent)}
+.rbtn.playing{background:var(--accent);color:#fff;border-color:var(--accent)}
+
+/* AI result */
+#ai-result{padding:14px 20px;border-bottom:1px solid var(--border);display:none}
+#ai-result.on{display:block}
+#ai-box{background:#f0faff;border:1px solid rgba(0,183,217,.3);border-radius:10px;padding:12px;font-size:12px;line-height:1.7;color:var(--text)}
+#ai-box .ai-label{font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);margin-bottom:6px}
+
+/* Log */
+#log-wrap{font-size:11px;color:var(--muted);max-height:130px;overflow-y:auto;line-height:1.6}
+#log-wrap div{padding:3px 0;border-bottom:1px solid var(--border)}
+
+/* ── Map ── */
+#map-wrap{position:relative}
+#map{width:100%;height:100vh}
+#map-banner{position:absolute;top:12px;left:12px;z-index:1000;background:rgba(255,255,255,.94);border:1px solid var(--border);border-radius:12px;padding:10px 14px;backdrop-filter:blur(6px);min-width:200px;pointer-events:none}
+.banner-name{font-size:13px;font-weight:700;margin-bottom:2px}
+.banner-sub{font-size:11px;color:var(--muted)}
+.banner-live{font-size:10px;font-weight:700;color:var(--live);margin-top:4px;display:none}
+.banner-live.on{display:block}
+#map-btns{position:absolute;top:12px;right:12px;z-index:1000;display:flex;flex-direction:column;gap:8px}
+.mbtn{background:rgba(255,255,255,.94);border:1px solid var(--border);border-radius:9px;padding:8px 13px;font-size:12px;font-weight:600;cursor:pointer;backdrop-filter:blur(4px);font-family:Inter,sans-serif;transition:all .15s}
+.mbtn:hover{border-color:var(--accent);color:var(--accent)}
+.mbtn.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+
+@media(max-width:900px){
+  #app{grid-template-columns:1fr}
+  #sidebar{position:absolute;z-index:2000;width:300px;height:100%;transform:translateX(-100%);transition:transform .25s}
+  #sidebar.open{transform:translateX(0)}
+  #toggle-sidebar{display:flex}
+}
+#toggle-sidebar{display:none;position:absolute;top:12px;left:12px;z-index:3000;background:#fff;border:1px solid var(--border);border-radius:9px;padding:8px 12px;font-size:18px;cursor:pointer}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div id="sidebar">
+    <div id="hdr">
+      <div class="eyebrow">⚓ Vessel Tracker</div>
+      <div class="vname">Saint<br>Emilion</div>
+      <div class="vmeta">MMSI 367399980 · Hudson River / NY Harbor</div>
+      <div id="last-pos">
+        <strong id="lp-loc">—</strong><br>
+        <span id="lp-detail"></span>
+      </div>
+    </div>
+
+    <div id="fetch-wrap">
+      <button id="btn-fetch" type="button">🔍 Fetch Live Position</button>
+      <div id="fetch-status">Tap to search for Saint Emilion's current location</div>
+    </div>
+
+    <div id="ai-result">
+      <div id="ai-box">
+        <div class="ai-label">📡 Live AIS Report</div>
+        <div id="ai-text"></div>
+      </div>
+    </div>
+
+    <div class="sec">
+      <div class="sec-title">Current Status</div>
+      <div class="stat-grid">
+        <div class="stat hi"><div class="stat-lbl">Speed</div><div class="stat-val" id="v-spd">—</div><div class="stat-sub">knots</div></div>
+        <div class="stat"><div class="stat-lbl">Course</div><div class="stat-val" id="v-cog">—</div><div class="stat-sub">degrees</div></div>
+        <div class="stat"><div class="stat-lbl">Status</div><div class="stat-val" style="font-size:14px" id="v-nav">—</div></div>
+        <div class="stat"><div class="stat-lbl">Last Fix</div><div class="stat-val" style="font-size:14px" id="v-fix">—</div></div>
+      </div>
+    </div>
+
+    <div class="sec">
+      <div class="sec-title">Recent Voyages</div>
+      <div id="route-list"></div>
+    </div>
+
+    <div class="sec">
+      <div class="sec-title">Activity Log</div>
+      <div id="log-wrap"></div>
+    </div>
+  </div>
+
+  <div id="map-wrap">
+    <button id="toggle-sidebar" type="button">☰</button>
+    <div id="map"></div>
+
+    <div id="map-banner">
+      <div class="banner-name">Saint Emilion</div>
+      <div class="banner-sub" id="banner-sub">Tap "Fetch Live Position" to locate</div>
+      <div class="banner-live" id="banner-live">🟢 Position updated</div>
+    </div>
+
+    <div id="map-btns">
+      <button class="mbtn active" id="btn-follow" type="button">Follow</button>
+      <button class="mbtn" id="btn-recenter" type="button">Recenter</button>
+      <button class="mbtn" id="btn-fs" type="button">⛶ Fullscreen</button>
+    </div>
+  </div>
+
+</div>
+<script>
+// ── Map ──────────────────────────────────────────────────────────────
+const map = L.map('map', {zoomControl:true}).setView([40.85,-74.00], 10);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',{
+  attribution:'© OpenStreetMap © Carto', subdomains:'abcd', maxZoom:19
+}).addTo(map);
+
+// ── Known docks ───────────────────────────────────────────────────────
+const DOCKS = [
+  {name:'Bayonne IMTT Terminal',    lat:40.6574, lng:-74.1130},
+  {name:'Gowanus Bay Terminal',     lat:40.6520, lng:-74.0170},
+  {name:'Yonkers Anchorage',        lat:40.9340, lng:-73.8980},
+  {name:'GW Bridge Anchorage',      lat:40.8510, lng:-73.9520},
+  {name:'Albany Oil Terminal',      lat:42.6400, lng:-73.7500},
+  {name:'Kinder Morgan Perth Amboy',lat:40.5030, lng:-74.2750},
+  {name:'Port Imperial Weehawken',  lat:40.7680, lng:-74.0200},
+  {name:'Stapleton Anchorage SI',   lat:40.6270, lng:-74.0740},
+  {name:'Kingston Oil Dock',        lat:41.9230, lng:-73.9750},
+  {name:'Newburgh Waterfront',      lat:41.5030, lng:-74.0080},
+];
+DOCKS.forEach(d=>{
+  L.marker([d.lat,d.lng],{icon:L.divIcon({
+    html:`<div style="background:rgba(255,255,255,.88);border:1px solid rgba(245,166,35,.5);border-radius:8px;padding:2px 7px;font-size:10px;font-weight:600;color:#c07800;white-space:nowrap;font-family:Inter,sans-serif;box-shadow:0 1px 4px rgba(0,0,0,.1)">⚓ ${d.name}</div>`,
+    className:'',iconAnchor:[0,10]
+  })}).addTo(map);
+});
+
+// ── Routes ────────────────────────────────────────────────────────────
+const ROUTES = [
+  {
+    name:'Bayonne → Albany', date:'May 21–22, 2026', color:'#0a6eff',
+    track:[
+      [40.6574,-74.1130],[40.6520,-74.0170],[40.7680,-74.0050],
+      [40.8510,-73.9520],[40.9340,-73.9150],[41.0600,-73.9100],
+      [41.2900,-73.9600],[41.5030,-74.0080],[41.9230,-73.9750],
+      [42.3500,-73.8800],[42.6400,-73.7500]
+    ]
+  },
+  {
+    name:'Albany → Gowanus', date:'May 18–19, 2026', color:'#9b5de5',
+    track:[
+      [42.6400,-73.7500],[41.9230,-73.9750],[41.5030,-74.0080],
+      [40.9340,-73.9150],[40.8510,-73.9520],[40.7680,-74.0050],
+      [40.6520,-74.0170]
+    ]
+  },
+  {
+    name:'Gowanus → Bayonne', date:'May 15, 2026', color:'#f15bb5',
+    track:[[40.6520,-74.0170],[40.6400,-74.0800],[40.6574,-74.1130]]
+  }
+];
+
+// ── Vessel icon ───────────────────────────────────────────────────────
+function tugIcon(color, size, label){
+  const s=size||48, h=s/2;
+  return L.divIcon({
+    className:'',iconSize:[s,s],iconAnchor:[h,h],
+    html:`<div style="position:relative;width:${s}px;height:${s}px">
+      ${label?`<div style="position:absolute;top:-20px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.78);color:#fff;border:1px solid ${color};border-radius:7px;padding:2px 8px;font-size:10px;font-weight:700;white-space:nowrap;font-family:Inter,sans-serif">${label}</div>`:''}
+      <svg width="${s}" height="${s}" viewBox="0 0 48 48">
+        <circle cx="24" cy="24" r="21" fill="${color}" fill-opacity=".14" stroke="${color}" stroke-width="1.5" stroke-opacity=".4"/>
+        <path d="M24 4 L34 18 L34 36 Q34 42 24 44 Q14 42 14 36 L14 18 Z" fill="${color}" stroke="white" stroke-width="1.5"/>
+        <path d="M18 12 L24 4 L30 12 Z" fill="white" opacity=".9"/>
+        <circle cx="24" cy="32" r="4" fill="white" opacity=".85"/>
+      </svg>
+    </div>`
+  });
+}
+
+function rotateMarker(mkr, deg){
+  const el=mkr.getElement(); if(!el)return;
+  const svg=el.querySelector('svg'); if(!svg)return;
+  svg.style.transform=`rotate(${deg}deg)`;
+  svg.style.transformOrigin='center center';
+}
+
+// ── State ─────────────────────────────────────────────────────────────
+let saintMarker=null, saintTrail=null, replayMarker=null;
+let shownLines=[], followMode=true;
+const trail = L.polyline([],{color:'#00b7d9',weight:2.5,opacity:.45,dashArray:'7,5'}).addTo(map);
+
+// Last-known ghost marker (mid-Hudson at Yonkers, heading north)
+const lkMarker = L.marker([40.9340,-73.9150],{
+  icon:tugIcon('#f5a623',42,'ST. EMILION'),zIndexOffset:100
+}).addTo(map);
+lkMarker.bindPopup(`<div style="font-family:Inter,sans-serif"><b>Saint Emilion</b><br><span style="font-size:11px;color:#888">📍 Last known · Yonkers, mid-river<br>Heading N · 7.0 kn<br><span style="color:#f5a623">Tap Fetch Live Position for current location</span></span></div>`,{closeButton:false});
+
+// ── Place marker on map ───────────────────────────────────────────────
+function placeSaint(lat, lng, cog, sog, nav){
+  const ll=[lat,lng];
+  if(!saintMarker){
+    lkMarker.remove();
+    saintMarker=L.marker(ll,{icon:tugIcon('#00b7d9',52,'ST. EMILION'),zIndexOffset:9999}).addTo(map);
+    if(followMode) map.setView(ll,13);
+  } else {
+    saintMarker.setLatLng(ll);
+    if(followMode) map.panTo(ll,{animate:true,duration:1});
+  }
+  rotateMarker(saintMarker, cog||0);
+  trail.addLatLng(ll);
+
+  // Update stats
+  document.getElementById('v-spd').textContent = sog!=null ? sog.toFixed(1) : '—';
+  document.getElementById('v-cog').textContent = cog!=null ? Math.round(cog)+'°' : '—';
+  document.getElementById('v-nav').textContent = nav||'—';
+  document.getElementById('v-fix').textContent = new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'});
+
+  // Banner
+  document.getElementById('banner-sub').textContent = `${lat.toFixed(4)}°N  ${Math.abs(lng).toFixed(4)}°W`;
+  document.getElementById('banner-live').classList.add('on');
+
+  // Last pos card
+  document.getElementById('last-pos').classList.add('on');
+
+  saintMarker.bindPopup(`<div style="font-family:Inter,sans-serif;min-width:170px">
+    <b style="font-size:13px">Saint Emilion</b>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:3px 10px;font-size:11px;margin-top:5px">
+      <span style="color:#888">Speed</span><b>${sog!=null?sog.toFixed(1)+' kn':'—'}</b>
+      <span style="color:#888">Course</span><b>${cog!=null?Math.round(cog)+'°':'—'}</b>
+      <span style="color:#888">Status</span><b>${nav||'—'}</b>
+      <span style="color:#888">Position</span><b>${lat.toFixed(4)}°N</b>
+    </div>
+    <div style="font-size:10px;color:#00b7d9;margin-top:5px">Updated ${new Date().toLocaleTimeString()}</div>
+  </div>`);
+}
+
+// ── AI Fetch ──────────────────────────────────────────────────────────
+async function fetchLivePosition(){
+  const btn=document.getElementById('btn-fetch');
+  const status=document.getElementById('fetch-status');
+  const resultBox=document.getElementById('ai-result');
+  const aiText=document.getElementById('ai-text');
+
+  btn.disabled=true; btn.textContent='🔄 Searching…';
+  status.textContent='Checking AIS databases…';
+  log('Fetching live position via AI search…');
+
+  try{
+    const res = await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        model:'claude-sonnet-4-20250514',
+        max_tokens:1000,
+        tools:[{type:'web_search_20250305',name:'web_search'}],
+        messages:[{role:'user',content:`Search VesselFinder, MarineTraffic, or MyShipTracking for the current AIS position of the tugboat SAINT EMILION, IMO 8741832, MMSI 367399980.
+
+Find and report:
+1. Current latitude and longitude (decimal degrees)
+2. Speed over ground (knots)
+3. Course over ground (degrees)  
+4. Navigational status (underway, moored, at anchor, etc.)
+5. Last AIS update time
+6. Current location description (what waterway, near what landmark)
+
+Format your response as a JSON object like this and nothing else:
+{"lat":40.78,"lng":-74.01,"sog":7.0,"cog":359,"nav":"Underway","location":"Hudson River near Yonkers","updated":"2026-05-23 23:00 UTC","summary":"One sentence description"}
+
+If you cannot find current data, return: {"error":"not found","summary":"Brief explanation of what you found"}`
+        }]
+      })
+    });
+
+    const data = await res.json();
+    const textBlock = data.content?.find(b=>b.type==='text');
+    if(!textBlock){ throw new Error('No response'); }
+
+    const raw = textBlock.text.trim();
+
+    // Try to parse JSON from the response
+    let parsed = null;
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    if(jsonMatch){
+      try{ parsed = JSON.parse(jsonMatch[0]); }catch(_){}
+    }
+
+    if(parsed && parsed.lat && parsed.lng && !parsed.error){
+      // Got coordinates — place on map
+      placeSaint(parsed.lat, parsed.lng, parsed.cog||0, parsed.sog||0, parsed.nav||'Unknown');
+
+      // Update last pos card
+      document.getElementById('lp-loc').textContent = parsed.location || `${parsed.lat.toFixed(4)}°N ${Math.abs(parsed.lng).toFixed(4)}°W`;
+      document.getElementById('lp-detail').textContent = `${parsed.sog||'—'} kn · ${parsed.cog||'—'}° · ${parsed.nav||'—'} · ${parsed.updated||''}`;
+
+      status.textContent = '✓ Position updated — ' + (parsed.location||'');
+      log(`✓ Position: ${parsed.lat.toFixed(4)}°N ${Math.abs(parsed.lng).toFixed(4)}°W · ${parsed.sog} kn · ${parsed.nav}`);
+
+      resultBox.classList.add('on');
+      aiText.textContent = parsed.summary || `Saint Emilion is at ${parsed.location}, making ${parsed.sog} kn on course ${parsed.cog}°.`;
+    } else {
+      // No coordinates but got a response
+      const summary = parsed?.summary || raw.slice(0,300);
+      status.textContent = 'Position not available right now';
+      resultBox.classList.add('on');
+      aiText.textContent = summary;
+      log('Position not found: ' + summary.slice(0,80));
+    }
+
+  } catch(e){
+    status.textContent = 'Search failed — try again';
+    log('Fetch error: ' + e.message);
+  } finally {
+    btn.disabled=false;
+    btn.textContent='🔍 Fetch Live Position';
+  }
+}
+
+// ── Route replay ──────────────────────────────────────────────────────
+function clearShown(){shownLines.forEach(l=>map.removeLayer(l));shownLines=[];}
+
+function interpolate(pts, n){
+  n=n||20; const out=[];
+  for(let i=0;i<pts.length-1;i++){
+    const a=pts[i],b=pts[i+1];
+    for(let j=0;j<n;j++){const t=j/n;out.push([a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t]);}
+  }
+  out.push(pts[pts.length-1]); return out;
+}
+
+function showRoute(route){
+  clearShown();
+  const line=L.polyline(route.track,{color:route.color,weight:4,opacity:.65,dashArray:'10,6'}).addTo(map);
+  const s=L.circleMarker(route.track[0],{radius:7,color:route.color,fillColor:route.color,fillOpacity:.9,weight:2}).addTo(map);
+  const e=L.circleMarker(route.track[route.track.length-1],{radius:7,color:'#18c37e',fillColor:'#18c37e',fillOpacity:.9,weight:2}).addTo(map);
+  shownLines.push(line,s,e);
+  map.fitBounds(line.getBounds(),{padding:[50,50]});
+}
+
+function replayRoute(route, btn){
+  clearShown();
+  if(replayMarker){map.removeLayer(replayMarker);replayMarker=null;}
+  document.querySelectorAll('.rbtn').forEach(b=>b.classList.remove('playing'));
+  btn.classList.add('playing'); btn.textContent='▶ Playing…';
+
+  const smooth=interpolate(route.track,20);
+  const line=L.polyline(smooth,{color:route.color,weight:3.5,opacity:.6}).addTo(map);
+  shownLines.push(line);
+  replayMarker=L.marker(smooth[0],{icon:tugIcon(route.color,40,null),zIndexOffset:5000}).addTo(map);
+  map.fitBounds(line.getBounds(),{padding:[60,60]});
+
+  let i=0;
+  function step(){
+    if(i>=smooth.length){
+      btn.classList.remove('playing'); btn.textContent='▶ Replay';
+      return;
+    }
+    replayMarker.setLatLng(smooth[i]);
+    if(i<smooth.length-1){
+      const a=smooth[i],b=smooth[i+1];
+      const bear=(Math.atan2(b[1]-a[1],b[0]-a[0])*180/Math.PI+360)%360;
+      rotateMarker(replayMarker,(bear-90+360)%360);
+    }
+    if(i%8===0) map.panTo(smooth[i],{animate:true,duration:.2});
+    i++; requestAnimationFrame(step);
+  }
+  step();
+}
+
+// ── Render routes ─────────────────────────────────────────────────────
+function renderRoutes(){
+  const wrap=document.getElementById('route-list');
+  ROUTES.forEach(r=>{
+    const div=document.createElement('div'); div.className='route';
+    div.innerHTML=`
+      <div class="route-name"><span class="route-dot" style="background:${r.color}"></span>${r.name}</div>
+      <div class="route-meta">${r.date}</div>
+      <div class="route-btns">
+        <button class="rbtn" type="button">▶ Replay</button>
+        <button class="rbtn" type="button">👁 Show</button>
+      </div>`;
+    const btns=div.querySelectorAll('.rbtn');
+    btns[0].onclick=()=>replayRoute(r,btns[0]);
+    btns[1].onclick=()=>showRoute(r);
+    wrap.appendChild(div);
+  });
+}
+
+// ── Log ───────────────────────────────────────────────────────────────
+function log(msg){
+  const el=document.getElementById('log-wrap');
+  const row=document.createElement('div');
+  row.textContent=new Date().toLocaleTimeString()+' — '+msg;
+  el.prepend(row);
+  while(el.children.length>40) el.removeChild(el.lastChild);
+}
+
+// ── Controls ──────────────────────────────────────────────────────────
+document.getElementById('btn-fetch').onclick=fetchLivePosition;
+
+document.getElementById('btn-follow').onclick=()=>{
+  followMode=!followMode;
+  document.getElementById('btn-follow').classList.toggle('active',followMode);
+};
+map.on('dragstart',()=>{
+  followMode=false;
+  document.getElementById('btn-follow').classList.remove('active');
+});
+document.getElementById('btn-recenter').onclick=()=>{
+  if(saintMarker) map.setView(saintMarker.getLatLng(),13);
+  else map.setView([40.85,-74.00],10);
+};
+document.getElementById('btn-fs').onclick=()=>{
+  if(!document.fullscreenElement) document.documentElement.requestFullscreen();
+  else document.exitFullscreen();
+};
+const toggleBtn=document.getElementById('toggle-sidebar');
+const sidebar=document.getElementById('sidebar');
+toggleBtn.onclick=()=>sidebar.classList.toggle('open');
+
+// ── Boot ──────────────────────────────────────────────────────────────
+renderRoutes();
+log('Ready — tap Fetch Live Position to locate Saint Emilion');
+</script>
+</body>
+</html>
