@@ -100,6 +100,17 @@ body{font-family:Inter,sans-serif;background:var(--bg);color:var(--text);overflo
   #toggle-sidebar{display:flex}
 }
 #toggle-sidebar{display:none;position:absolute;top:12px;left:12px;z-index:3000;background:#fff;border:1px solid var(--border);border-radius:9px;padding:8px 12px;font-size:18px;cursor:pointer}
+
+/* Collapsible sections */
+.sec-header{display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;padding:14px 20px;border-bottom:1px solid var(--border)}
+.sec-header:hover{background:#f8fbfd}
+.sec-header .sec-title{margin-bottom:0;font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+.sec-header .sec-arrow{font-size:10px;color:var(--muted);transition:transform .2s}
+.sec-header.collapsed .sec-arrow{transform:rotate(-90deg)}
+.sec-body{padding:0 20px 14px;border-bottom:1px solid var(--border)}
+.sec-body.hidden{display:none}
+.collapsible-wrap{border-bottom:none!important;padding:0!important}
+.collapsible-wrap>.sec{border:none;border-radius:0;margin:0}
 </style>
 </head>
 <body>
@@ -131,8 +142,12 @@ body{font-family:Inter,sans-serif;background:var(--bg);color:var(--text);overflo
     </div>
 
     <!-- Manual position inputs -->
-    <div id="manual-wrap" style="padding:14px 20px;border-bottom:1px solid var(--border)">
-      <div style="font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);margin-bottom:10px">📍 Manual Position</div>
+    <div id="manual-wrap" style="border-bottom:1px solid var(--border)">
+      <div class="sec-header" onclick="toggleSec(this)" style="padding:12px 20px">
+        <div class="sec-title">📍 Manual Position</div>
+        <span class="sec-arrow">▼</span>
+      </div>
+      <div class="sec-body" style="padding:0 20px 14px">
 
       <style>
         .ac-wrap{position:relative;margin-bottom:8px}
@@ -153,7 +168,10 @@ body{font-family:Inter,sans-serif;background:var(--bg);color:var(--text);overflo
             <input class="ac-inp" id="inp-start" placeholder="Type dock, port, or location…" autocomplete="off">
             <div class="ac-list" id="list-start"></div>
           </div>
-          <input type="time" id="time-start" style="width:88px;padding:8px 6px;border:1px solid var(--border);border-radius:8px;font-size:12px;font-family:Inter,sans-serif;color:var(--text);background:#f8fbfd;flex-shrink:0">
+          <div style="display:flex;flex-direction:column;gap:4px;flex-shrink:0">
+            <input type="date" id="date-start" style="width:130px;padding:7px 6px;border:1px solid var(--border);border-radius:8px;font-size:11px;font-family:Inter,sans-serif;color:var(--text);background:#f8fbfd">
+            <input type="time" id="time-start" style="width:130px;padding:7px 6px;border:1px solid var(--border);border-radius:8px;font-size:11px;font-family:Inter,sans-serif;color:var(--text);background:#f8fbfd">
+          </div>
         </div>
         <div id="start-coord" style="font-size:10px;color:var(--live);margin-top:3px;min-height:13px"></div>
       </div>
@@ -167,37 +185,67 @@ body{font-family:Inter,sans-serif;background:var(--bg);color:var(--text);overflo
         <div id="current-coord" style="font-size:10px;color:var(--live);margin-top:3px;min-height:13px"></div>
       </div>
 
+      <div style="margin-bottom:10px">
+        <label style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;display:block;margin-bottom:4px">Heading to <span style="font-weight:400;text-transform:none">(optional)</span></label>
+        <div class="ac-wrap">
+          <input class="ac-inp" id="inp-dest" placeholder="Type destination, e.g. Albany…" autocomplete="off">
+          <div class="ac-list" id="list-dest"></div>
+        </div>
+        <div id="dest-coord" style="font-size:10px;color:var(--live);margin-top:3px;min-height:13px"></div>
+      </div>
+
       <button type="button" id="btn-manual-apply" style="width:100%;padding:9px;background:rgba(0,183,217,.12);border:1.5px solid rgba(0,183,217,.35);border-radius:9px;color:var(--accent);font-weight:700;font-size:12px;cursor:pointer;font-family:Inter,sans-serif">
         ↻ Recalibrate
       </button>
       <div id="manual-result" style="margin-top:8px;font-size:11px;color:var(--muted);min-height:14px;line-height:1.5"></div>
+      </div><!-- end sec-body -->
     </div>
 
-    <div id="ai-result">
-      <div id="ai-box">
-        <div class="ai-label">📡 Live AIS Report</div>
-        <div id="ai-text"></div>
+    <div id="ai-result" style="border-bottom:1px solid var(--border)">
+      <div class="sec-header" onclick="toggleSec(this)" style="padding:12px 20px">
+        <div class="sec-title">📡 Live AIS Report</div>
+        <span class="sec-arrow">▼</span>
+      </div>
+      <div class="sec-body" style="padding:0 20px 14px">
+        <div id="ai-box" style="background:#f0faff;border:1px solid rgba(0,183,217,.3);border-radius:10px;padding:12px;font-size:12px;line-height:1.7;color:var(--text)">
+          <div id="ai-text"></div>
+        </div>
       </div>
     </div>
 
-    <div class="sec">
-      <div class="sec-title">Current Status</div>
+    <div class="sec" style="padding:0;border-bottom:none">
+      <div class="sec-header" onclick="toggleSec(this)">
+        <div class="sec-title">Current Status</div>
+        <span class="sec-arrow">▼</span>
+      </div>
+      <div class="sec-body">
       <div class="stat-grid">
         <div class="stat hi"><div class="stat-lbl">Speed</div><div class="stat-val" id="v-spd">—</div><div class="stat-sub">knots</div></div>
         <div class="stat"><div class="stat-lbl">Course</div><div class="stat-val" id="v-cog">—</div><div class="stat-sub">degrees</div></div>
         <div class="stat"><div class="stat-lbl">Status</div><div class="stat-val" style="font-size:14px" id="v-nav">—</div></div>
         <div class="stat"><div class="stat-lbl">Last Fix</div><div class="stat-val" style="font-size:14px" id="v-fix">—</div></div>
       </div>
+      </div><!-- end sec-body -->
     </div>
 
-    <div class="sec">
-      <div class="sec-title">Recent Voyages</div>
+    <div class="sec" style="padding:0;border-bottom:none">
+      <div class="sec-header" onclick="toggleSec(this)">
+        <div class="sec-title">Recent Voyages</div>
+        <span class="sec-arrow">▼</span>
+      </div>
+      <div class="sec-body">
       <div id="route-list"></div>
+      </div><!-- end sec-body -->
     </div>
 
-    <div class="sec">
-      <div class="sec-title">Activity Log</div>
-      <div id="log-wrap"></div>
+    <div class="sec" style="padding:0;border-bottom:none">
+      <div class="sec-header collapsed" onclick="toggleSec(this)">
+        <div class="sec-title">Activity Log</div>
+        <span class="sec-arrow">▼</span>
+      </div>
+      <div class="sec-body hidden">
+        <div id="log-wrap"></div>
+      </div>
     </div>
   </div>
 
@@ -229,16 +277,39 @@ L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r
 
 // ── Known docks ───────────────────────────────────────────────────────
 const DOCKS = [
-  {name:'Bayonne IMTT Terminal',    lat:40.6574, lng:-74.1130},
-  {name:'Gowanus Bay Terminal',     lat:40.6520, lng:-74.0170},
-  {name:'Yonkers Anchorage',        lat:40.9340, lng:-73.8980},
-  {name:'GW Bridge Anchorage',      lat:40.8510, lng:-73.9520},
-  {name:'Albany Oil Terminal',      lat:42.6400, lng:-73.7500},
-  {name:'Kinder Morgan Perth Amboy',lat:40.5030, lng:-74.2750},
-  {name:'Port Imperial Weehawken',  lat:40.7680, lng:-74.0200},
-  {name:'Stapleton Anchorage SI',   lat:40.6270, lng:-74.0740},
-  {name:'Kingston Oil Dock',        lat:41.9230, lng:-73.9750},
-  {name:'Newburgh Waterfront',      lat:41.5030, lng:-74.0080},
+  // Phillips 66 / Linden area
+  {name:'Phillips 66 Linden Terminal',    lat:40.6372, lng:-74.2144},
+  {name:'Phillips 66 Tremley Point',      lat:40.6100, lng:-74.2300},
+  // Bayonne / Jersey City
+  {name:'Bayonne IMTT Terminal',          lat:40.6574, lng:-74.1130},
+  {name:'Kinder Morgan Perth Amboy',      lat:40.5030, lng:-74.2750},
+  {name:'Global Petroleum Perth Amboy',   lat:40.5100, lng:-74.2650},
+  // Staten Island
+  {name:'Stapleton Anchorage SI',         lat:40.6270, lng:-74.0740},
+  {name:'Rossville / Arthur Kill',        lat:40.5500, lng:-74.2100},
+  // NYC / NJ Harbor
+  {name:'Gowanus Bay Terminal',           lat:40.6520, lng:-74.0170},
+  {name:'Port Imperial Weehawken',        lat:40.7680, lng:-74.0200},
+  {name:'Sunoco Inwood Terminal',         lat:40.6200, lng:-74.0450},
+  // Hudson River going north
+  {name:'GW Bridge Anchorage',            lat:40.8510, lng:-73.9520},
+  {name:'Yonkers Anchorage',              lat:40.9340, lng:-73.8980},
+  {name:'Haverstraw Bay Anchorage',       lat:41.2100, lng:-73.9700},
+  {name:'Newburgh Waterfront',            lat:41.5030, lng:-74.0080},
+  {name:'New Hamburg Dock',               lat:41.5750, lng:-73.9450},
+  {name:'Poughkeepsie Fuel Dock',         lat:41.7070, lng:-73.9350},
+  {name:'Kingston Oil Dock',              lat:41.9230, lng:-73.9750},
+  {name:'Catskill Anchorage',             lat:42.2100, lng:-73.8600},
+  {name:'Coeymans Industrial Dock',       lat:42.4700, lng:-73.7900},
+  // Albany / Rensselaer area
+  {name:'Port of Albany — Berth 1',       lat:42.6200, lng:-73.7600},
+  {name:'Port of Albany — Berth 2',       lat:42.6250, lng:-73.7580},
+  {name:'Port of Albany — Berths 5-6',    lat:42.6281, lng:-73.7575},
+  {name:'Global Partners Albany Terminal',lat:42.6350, lng:-73.7520},
+  {name:'Albany Oil Terminal',            lat:42.6400, lng:-73.7500},
+  {name:'Rensselaer Fuel Dock',           lat:42.6520, lng:-73.7300},
+  {name:'Sprague Energy Rensselaer',      lat:42.6480, lng:-73.7350},
+  {name:'Port of Coeymans',              lat:42.4842, lng:-73.7906},
 ];
 DOCKS.forEach(d=>{
   L.marker([d.lat,d.lng],{icon:L.divIcon({
@@ -733,6 +804,14 @@ function log(msg){
 }
 
 // ── Controls ──────────────────────────────────────────────────────────
+// ── Collapsible sections ──────────────────────────────────────────────
+function toggleSec(header) {
+  const body = header.nextElementSibling;
+  const isHidden = body.classList.contains('hidden');
+  body.classList.toggle('hidden', !isHidden);
+  header.classList.toggle('collapsed', !isHidden);
+}
+
 document.getElementById('btn-fetch').onclick=fetchLivePosition;
 
 document.getElementById('btn-dr').onclick=()=>{
@@ -914,11 +993,13 @@ function showDocks(list, coordEl, onSelect) {
   });
 }
 
-setupAutocomplete('inp-start', 'list-start', 'start-coord', (loc) => {
-  startCoords = loc;
-});
-setupAutocomplete('inp-current', 'list-current', 'current-coord', (loc) => {
-  currentCoords = loc;
+let destCoords = null;
+setupAutocomplete('inp-start',   'list-start',   'start-coord',   (loc) => { startCoords = loc; });
+setupAutocomplete('inp-current', 'list-current', 'current-coord', (loc) => { currentCoords = loc; });
+setupAutocomplete('inp-dest',    'list-dest',    'dest-coord',    (loc) => {
+  destCoords = loc;
+  // Show estimated arrival on map
+  if (destCoords) showDestinationEstimate();
 });
 
 // Geocode a text location using Nominatim
@@ -943,12 +1024,19 @@ document.getElementById('btn-manual-apply').addEventListener('click', async () =
 
   const startLat = startCoords.lat, startLng = startCoords.lng;
 
-  // Build departure timestamp from today + time input
+  // Build departure timestamp from date + time inputs
+  const dateVal = document.getElementById('date-start').value;
   const [hh, mm] = timeVal.split(':').map(Number);
-  const depTime = new Date();
-  depTime.setHours(hh, mm, 0, 0);
-  // If time is in the future (e.g. 11pm entered at 1am next day), subtract a day
-  if (depTime.getTime() > Date.now()) depTime.setDate(depTime.getDate() - 1);
+  let depTime;
+  if (dateVal) {
+    depTime = new Date(dateVal);
+    depTime.setHours(hh, mm, 0, 0);
+  } else {
+    // No date selected — assume today, but if time is in future use yesterday
+    depTime = new Date();
+    depTime.setHours(hh, mm, 0, 0);
+    if (depTime.getTime() > Date.now()) depTime.setDate(depTime.getDate() - 1);
+  }
   const depTs = depTime.getTime();
 
   // Set voyage start
@@ -1039,9 +1127,72 @@ document.getElementById('btn-manual-apply').addEventListener('click', async () =
   btn.textContent = '↻ Recalibrate'; btn.disabled = false;
 });
 
+// ── Destination estimate ──────────────────────────────────────────────
+let destMarker = null, destLine = null;
+
+function showDestinationEstimate() {
+  if (!destCoords) return;
+  const sog = lastFix.sog > 0.5 ? lastFix.sog : 7.0;
+  const fromLat = lastFix.lat || (startCoords ? startCoords.lat : null);
+  const fromLng = lastFix.lng || (startCoords ? startCoords.lng : null);
+  if (!fromLat) return;
+
+  // Distance along Hudson to destination
+  const fromIdx = nearestHudsonIdx(fromLat, fromLng);
+  const toIdx = nearestHudsonIdx(destCoords.lat, destCoords.lng);
+  let distNm = 0;
+  for (let i = Math.min(fromIdx,toIdx); i < Math.max(fromIdx,toIdx); i++) {
+    const a = HUDSON[i], b = HUDSON[i+1];
+    distNm += Math.sqrt((b[0]-a[0])**2+(b[1]-a[1])**2)*60;
+  }
+  const etaHrs = distNm / sog;
+  const etaTime = new Date(Date.now() + etaHrs * 3600000);
+  const etaStr = etaTime.toLocaleString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+
+  // Draw destination marker
+  if (destMarker) map.removeLayer(destMarker);
+  destMarker = L.marker([destCoords.lat, destCoords.lng], {
+    icon: L.divIcon({
+      className: '',
+      iconSize: [30, 30],
+      iconAnchor: [15, 15],
+      html: `<div style="width:30px;height:30px;background:#18c37e;border:2px solid white;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;box-shadow:0 2px 6px rgba(0,0,0,.2)">🏁</div>`
+    }),
+    zIndexOffset: 800
+  }).addTo(map);
+  destMarker.bindPopup(`<div style="font-family:Inter,sans-serif;min-width:180px">
+    <b style="font-size:13px">🏁 Destination: ${destCoords.name || document.getElementById('inp-dest').value}</b>
+    <div style="font-size:11px;color:#888;margin-top:5px;line-height:1.7">
+      Distance: <b>${distNm.toFixed(1)} nm</b> from current position<br>
+      Speed: <b>${sog.toFixed(1)} kn</b><br>
+      ETA: <b style="color:#18c37e">${etaStr}</b>
+    </div>
+  </div>`, {closeButton: false});
+  destMarker.openPopup();
+
+  // Draw dashed route line to destination
+  if (destLine) map.removeLayer(destLine);
+  const routePts = [[fromLat, fromLng]];
+  const step = toIdx > fromIdx ? 1 : -1;
+  let idx = fromIdx;
+  while (idx !== toIdx && idx+step >= 0 && idx+step < HUDSON.length) {
+    idx += step; routePts.push(HUDSON[idx]);
+  }
+  routePts.push([destCoords.lat, destCoords.lng]);
+  destLine = L.polyline(routePts, {color:'#18c37e', weight:2.5, opacity:.5, dashArray:'8,5'}).addTo(map);
+
+  log(`🏁 Destination: ${destCoords.name || ''} · ${distNm.toFixed(1)} nm · ETA ${etaStr} at ${sog.toFixed(1)} kn`);
+  document.getElementById('manual-result').textContent = `ETA ${etaStr} · ${distNm.toFixed(1)} nm at ${sog.toFixed(1)} kn`;
+  document.getElementById('manual-result').style.color = '#18c37e';
+}
+
 // ── Boot ──────────────────────────────────────────────────────────────
 renderRoutes();
 log('Starting live tracker…');
+// Pre-fill date with today
+const todayStr = new Date().toISOString().split('T')[0];
+document.getElementById('date-start').value = todayStr;
+
 document.querySelectorAll('.interval-btn').forEach(btn=>btn.addEventListener('click',()=>startPolling(parseInt(btn.dataset.seconds))));
 startPolling(30);
 </script>
