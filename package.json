@@ -1,0 +1,12 @@
+{
+  "name": "saint-emilion-relay",
+  "version": "1.0.0",
+  "description": "AIS relay server for Saint Emilion tracker",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "ws": "^8.16.0"
+  }
+}
