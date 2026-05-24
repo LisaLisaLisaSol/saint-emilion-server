@@ -1,93 +1,102 @@
-const { WebSocketServer, WebSocket } = require('ws');
+// Saint Emilion — Anthropic API proxy
+// Simple HTTP server that forwards requests to Anthropic API
+// No WebSockets, no AIS — just a secure API proxy
+ 
 const http = require('http');
-
+const https = require('https');
+ 
 const PORT = process.env.PORT || 3000;
-const AIS_KEY = process.env.AIS_KEY || '';
-
-// Only Saint Emilion — tiny data volume, won't overwhelm the queue
-const SUBSCRIPTION = {
-  Apikey: AIS_KEY,
-  BoundingBoxes: [[[-90, -180], [90, 180]]], // world box but filtered by MMSI
-  FiltersShipMMSI: ['367399980'],
-  FilterMessageTypes: ['PositionReport', 'ShipStaticData']
-};
-
+const ANTHROPIC_KEY = process.env.ANTHROPIC_KEY || '';
+ 
 const httpServer = http.createServer((req, res) => {
-  res.writeHead(200, { 'Content-Type': 'text/plain' });
-  res.end('Saint Emilion AIS Relay OK');
-});
-
-const wss = new WebSocketServer({ server: httpServer });
-let aisWs = null;
-let reconnectTimer = null;
-let isConnecting = false;
-let browserClients = new Set();
-
-function broadcast(obj) {
-  const msg = JSON.stringify(obj);
-  for (const c of browserClients)
-    if (c.readyState === WebSocket.OPEN) c.send(msg);
-}
-
-function connectToAIS() {
-  if (isConnecting) return;
-  if (aisWs && aisWs.readyState === WebSocket.OPEN) return;
-  if (!AIS_KEY) { console.error('No AIS_KEY'); return; }
-
-  isConnecting = true;
-  console.log('Connecting to aisstream.io...');
-
-  aisWs = new WebSocket('wss://stream.aisstream.io/v0/stream');
-
-  aisWs.on('open', () => {
-    // Send subscription immediately — must be within 3 seconds
-    const subMsg = JSON.stringify(SUBSCRIPTION);
-    aisWs.send(subMsg, (err) => {
-      if (err) {
-        console.error('Subscription send failed:', err.message);
-      } else {
-        isConnecting = false;
-        console.log('Subscribed to MMSI 367399980 (Saint Emilion only)');
-        broadcast({ type: 'status', status: 'connected' });
-      }
+ 
+  // CORS headers so the browser can call this from GitHub Pages
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+ 
+  // Handle preflight
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204); res.end(); return;
+  }
+ 
+  // Health check
+  if (req.method === 'GET') {
+    res.writeHead(200, {'Content-Type':'text/plain'});
+    res.end('Saint Emilion proxy OK'); return;
+  }
+ 
+  // Only allow POST to /fetch
+  if (req.method !== 'POST' || req.url !== '/fetch') {
+    res.writeHead(404); res.end('Not found'); return;
+  }
+ 
+  if (!ANTHROPIC_KEY) {
+    res.writeHead(500, {'Content-Type':'application/json'});
+    res.end(JSON.stringify({error:'No ANTHROPIC_KEY set on server'})); return;
+  }
+ 
+  // Read request body
+  let body = '';
+  req.on('data', chunk => body += chunk);
+  req.on('end', () => {
+    // Forward to Anthropic
+    const payload = JSON.stringify({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 1000,
+      tools: [{type: 'web_search_20250305', name: 'web_search'}],
+      messages: [{
+        role: 'user',
+        content: `Search VesselFinder, MarineTraffic, or MyShipTracking for the current AIS position of the tugboat SAINT EMILION, IMO 8741832, MMSI 367399980.
+ 
+Find and report:
+1. Current latitude and longitude (decimal degrees)
+2. Speed over ground (knots)
+3. Course over ground (degrees)
+4. Navigational status (underway, moored, at anchor, etc.)
+5. Last AIS update time
+6. Current location description
+ 
+Format your response as JSON and nothing else:
+{"lat":40.78,"lng":-74.01,"sog":7.0,"cog":359,"nav":"Underway","location":"Hudson River near Yonkers","updated":"2026-05-23 23:00 UTC","summary":"One sentence description"}
+ 
+If you cannot find current data return: {"error":"not found","summary":"Brief explanation"}`
+      }]
     });
+ 
+    const options = {
+      hostname: 'api.anthropic.com',
+      path: '/v1/messages',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': ANTHROPIC_KEY,
+        'anthropic-version': '2023-06-01',
+        'Content-Length': Buffer.byteLength(payload)
+      }
+    };
+ 
+    const proxyReq = https.request(options, (proxyRes) => {
+      let data = '';
+      proxyRes.on('data', chunk => data += chunk);
+      proxyRes.on('end', () => {
+        res.writeHead(proxyRes.statusCode, {'Content-Type':'application/json'});
+        res.end(data);
+      });
+    });
+ 
+    proxyReq.on('error', (e) => {
+      console.error('Anthropic request error:', e.message);
+      res.writeHead(502, {'Content-Type':'application/json'});
+      res.end(JSON.stringify({error: e.message}));
+    });
+ 
+    proxyReq.write(payload);
+    proxyReq.end();
   });
-
-  aisWs.on('message', (data) => {
-    const text = data.toString();
-    console.log('AIS message received:', text.slice(0, 80));
-    broadcast({ type: 'ais', data: text });
-  });
-
-  aisWs.on('close', (code) => {
-    isConnecting = false;
-    aisWs = null;
-    console.log(`aisstream disconnected (${code})`);
-    broadcast({ type: 'status', status: 'reconnecting' });
-    if (!reconnectTimer) {
-      reconnectTimer = setTimeout(() => {
-        reconnectTimer = null;
-        connectToAIS();
-      }, 8000);
-    }
-  });
-
-  aisWs.on('error', (err) => {
-    isConnecting = false;
-    console.error('aisstream error:', err.message);
-  });
-}
-
-wss.on('connection', (client) => {
-  browserClients.add(client);
-  console.log(`Browser client connected (${browserClients.size} total)`);
-  const status = aisWs && aisWs.readyState === WebSocket.OPEN ? 'connected' : 'reconnecting';
-  client.send(JSON.stringify({ type: 'status', status }));
-  client.on('close', () => browserClients.delete(client));
-  client.on('error', () => browserClients.delete(client));
 });
-
+ 
 httpServer.listen(PORT, () => {
-  console.log(`Listening on port ${PORT}`);
-  connectToAIS();
+  console.log(`Proxy server listening on port ${PORT}`);
+  if (!ANTHROPIC_KEY) console.warn('WARNING: ANTHROPIC_KEY not set');
 });
