@@ -171,6 +171,7 @@ body{font-family:Inter,sans-serif;background:var(--bg);color:var(--text);overflo
     <div id="map-btns">
       <button class="mbtn active" id="btn-follow" type="button">Follow</button>
       <button class="mbtn" id="btn-recenter" type="button">Recenter</button>
+      <button class="mbtn active" id="btn-dr" type="button">🟠 Estimate On</button>
       <button class="mbtn" id="btn-fs" type="button">⛶ Fullscreen</button>
     </div>
   </div>
@@ -254,7 +255,7 @@ function rotateMarker(mkr, deg){
 
 // ── State ─────────────────────────────────────────────────────────────
 let saintMarker=null, saintTrail=null, replayMarker=null;
-let drMarker=null, drTimer=null; // dead reckoning
+let drMarker=null, drTimer=null, drEnabled=true; // dead reckoning
 let lastFix={lat:null,lng:null,sog:0,cog:0,ts:null}; // last confirmed AIS fix
 let shownLines=[], followMode=true;
 // Current voyage trail — solid teal line
@@ -377,7 +378,14 @@ function projectAlongHudson(startIdx, distNm, goingNorth) {
 }
 
 function deadReckon() {
-  if (!lastFix.lat) return;
+  if (!lastFix.lat || !drEnabled) {
+    // Hide DR elements if disabled
+    if (!drEnabled) {
+      if (drMarker) { map.removeLayer(drMarker); drMarker = null; }
+      if (window._drLine) { map.removeLayer(window._drLine); window._drLine = null; }
+    }
+    return;
+  }
   const sog = lastFix.sog > 0.5 ? lastFix.sog : 7.0;
   const elapsed = (Date.now() - lastFix.ts) / 3600000; // hours
   if (elapsed <= 0) return;
@@ -417,6 +425,36 @@ function deadReckon() {
     if (svg) { svg.style.transform = `rotate(${lastFix.cog}deg)`; svg.style.transformOrigin = 'center'; }
     const lbl = el.querySelector('#dr-label');
     if (lbl) lbl.textContent = `EST +${ageMin}m`;
+  }
+
+  // Accumulate estimated distance
+  if (lastEstLat !== null) {
+    const dLat = estLat - lastEstLat;
+    const dLng = estLng - lastEstLng;
+    const segNm = Math.sqrt(dLat*dLat + dLng*dLng) * 60;
+    if (segNm < 5) { // sanity check — ignore jumps > 5nm
+      estPositions.push([estLat, estLng]);
+    }
+  } else {
+    estPositions.push([estLat, estLng]);
+  }
+  lastEstLat = estLat; lastEstLng = estLng;
+
+  // Update voyage card with estimated distance
+  if (voyageStartTime && estPositions.length > 1) {
+    let totalNm = 0;
+    for (let i = 1; i < estPositions.length; i++) {
+      const dLat = estPositions[i][0] - estPositions[i-1][0];
+      const dLng = estPositions[i][1] - estPositions[i-1][1];
+      totalNm += Math.sqrt(dLat*dLat + dLng*dLng) * 60;
+    }
+    const saved = JSON.parse(localStorage.getItem('saved_voyages') || '[]');
+    const liveIdx = saved.findIndex(v => v.live && v.inProgress);
+    if (liveIdx >= 0) {
+      saved[liveIdx].date = new Date(voyageStartTime).toLocaleDateString('en-US',{month:'short',day:'numeric'}) + ' · ' + totalNm.toFixed(1) + ' nm so far';
+      localStorage.setItem('saved_voyages', JSON.stringify(saved));
+      renderRoutes();
+    }
   }
 
   // Update popup
@@ -654,6 +692,19 @@ function log(msg){
 // ── Controls ──────────────────────────────────────────────────────────
 document.getElementById('btn-fetch').onclick=fetchLivePosition;
 
+document.getElementById('btn-dr').onclick=()=>{
+  drEnabled=!drEnabled;
+  const btn=document.getElementById('btn-dr');
+  btn.classList.toggle('active',drEnabled);
+  btn.textContent=drEnabled?'🟠 Estimate On':'⚫ Estimate Off';
+  if(!drEnabled){
+    if(drMarker){map.removeLayer(drMarker);drMarker=null;}
+    if(window._drLine){map.removeLayer(window._drLine);window._drLine=null;}
+  } else {
+    deadReckon();
+  }
+};
+
 document.getElementById('btn-follow').onclick=()=>{
   followMode=!followMode;
   document.getElementById('btn-follow').classList.toggle('active',followMode);
@@ -676,6 +727,7 @@ toggleBtn.onclick=()=>sidebar.classList.toggle('open');
 
 // ── Voyage recording ──────────────────────────────────────────────────
 let voyageTrack=[], voyageStartTime=null, lastMoving=false;
+let estPositions=[], lastEstLat=null, lastEstLng=null; // estimated track for distance
 function recordPosition(lat,lng,sog,nav,apiTs){
   const moving=sog>0.1; // low threshold in case of stale speed data
   if(moving){
