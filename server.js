@@ -7,6 +7,10 @@ const VESSELAPI_KEY = process.env.VESSELAPI_KEY || '';
 const ANTHROPIC_KEY = process.env.ANTHROPIC_KEY || '';
 const MMSI = '367399980';
 
+// Rate limit state — stops all calls when quota is hit
+let vesselApiKilled = false;
+let vesselApiRetryAfter = 0; // timestamp when we can retry
+
 const NAV = {
   0:'Underway',1:'At Anchor',2:'Not Under Command',3:'Restricted',
   5:'Moored',7:'Fishing',8:'Sailing',15:'Unknown'
@@ -46,8 +50,14 @@ const httpServer = http.createServer(async (req, res) => {
 
   try {
     // ── Try VesselAPI first ──────────────────────────────
-    if (VESSELAPI_KEY) {
-      console.log('Trying VesselAPI...');
+    if (VESSELAPI_KEY && !vesselApiKilled) {
+      // Check if we're in a retry cooldown
+      if (Date.now() < vesselApiRetryAfter) {
+        const waitMin = Math.ceil((vesselApiRetryAfter - Date.now()) / 60000);
+        console.log(`VesselAPI in cooldown — ${waitMin}m remaining`);
+        broadcast({ type: 'quota', message: `VesselAPI suspended — retry in ${waitMin} minutes`, retryAt: vesselApiRetryAfter });
+      } else {
+        console.log('Trying VesselAPI...');
       // Correct VesselAPI endpoint: /v1/vessel/{id}/position?filter.idType=mmsi
       const url = `https://api.vesselapi.com/v1/vessel/${MMSI}/position?filter.idType=mmsi`;
       const r = await new Promise((resolve, reject) => {
@@ -94,10 +104,23 @@ const httpServer = http.createServer(async (req, res) => {
         }
       }
 
-      // Log non-200 for debugging
-      if (r.status !== 200) {
+      // Detect quota/rate limit errors — stop polling
+      if (r.status === 429 || r.status === 403) {
+        let retrySeconds = 3600; // default 1 hour
+        try {
+          const errBody = JSON.parse(r.body);
+          const msg = errBody?.error?.message || '';
+          const match = msg.match(/Retry after (\d+) seconds/i);
+          if (match) retrySeconds = parseInt(match[1]);
+        } catch(_) {}
+        vesselApiRetryAfter = Date.now() + (retrySeconds * 1000);
+        const retryMin = Math.ceil(retrySeconds / 60);
+        console.log(`VesselAPI quota hit — suspended for ${retryMin} minutes`);
+        broadcast({ type: 'quota', message: `VesselAPI quota reached — auto-polling stopped for ${retryMin} min`, retryAt: vesselApiRetryAfter });
+      } else if (r.status !== 200) {
         console.log('VesselAPI failed:', r.status, r.body.slice(0, 300));
       }
+      } // end cooldown else
     }
 
     // ── Fallback to Anthropic web search ─────────────────
