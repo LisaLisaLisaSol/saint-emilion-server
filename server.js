@@ -48,8 +48,19 @@ const httpServer = http.createServer(async (req, res) => {
     // ── Try VesselAPI first ──────────────────────────────
     if (VESSELAPI_KEY) {
       console.log('Trying VesselAPI...');
-      const url = `https://api.vesselapi.com/v1/vessel/position?mmsi=${MMSI}&key=${VESSELAPI_KEY}`;
-      const r = await httpsGet(url);
+      const url = `https://api.vesselapi.com/v1/vessel/position?mmsi=${MMSI}`;
+      const r = await new Promise((resolve, reject) => {
+        https.get(url, {
+          headers: {
+            'Authorization': `Bearer ${VESSELAPI_KEY}`,
+            'User-Agent': 'SaintEmilionTracker/1.0'
+          }
+        }, (res) => {
+          let data = '';
+          res.on('data', chunk => data += chunk);
+          res.on('end', () => resolve({ status: res.statusCode, body: data }));
+        }).on('error', reject);
+      });
       console.log('VesselAPI status:', r.status, r.body.slice(0, 200));
 
       if (r.status === 200) {
