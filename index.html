@@ -292,7 +292,7 @@ function placeSaint(lat, lng, cog, sog, nav){
   }
 
   // Update the live voyage card in sidebar every 5 positions
-  if (trail.getLatLngs().length % 5 === 0) updateLiveVoyageCard();
+  if (trail.getLatLngs().length >= 2) updateLiveVoyageCard();
 
   // Update stats
   document.getElementById('v-spd').textContent = sog!=null ? sog.toFixed(1) : '—';
@@ -614,7 +614,7 @@ toggleBtn.onclick=()=>sidebar.classList.toggle('open');
 // ── Voyage recording ──────────────────────────────────────────────────
 let voyageTrack=[], voyageStartTime=null, lastMoving=false;
 function recordPosition(lat,lng,sog,nav){
-  const moving=sog>0.5;
+  const moving=sog>0.1; // low threshold in case of stale speed data
   if(moving){
     if(!voyageStartTime){voyageStartTime=Date.now();voyageTrack=[];log('New voyage — recording track');}
     voyageTrack.push([lat,lng]);
@@ -682,5 +682,3 @@ startPolling(30);
 </script>
 </body>
 </html>
-
-
