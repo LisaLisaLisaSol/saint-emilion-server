@@ -268,7 +268,7 @@ const lkMarker = L.marker([40.9340,-73.9150],{
 lkMarker.bindPopup(`<div style="font-family:Inter,sans-serif"><b>Saint Emilion</b><br><span style="font-size:11px;color:#888">📍 Last known · Yonkers, mid-river<br>Heading N · 7.0 kn<br><span style="color:#f5a623">Tap Fetch Live Position for current location</span></span></div>`,{closeButton:false});
 
 // ── Place marker on map ───────────────────────────────────────────────
-function placeSaint(lat, lng, cog, sog, nav){
+function placeSaint(lat, lng, cog, sog, nav, apiTs){
   const ll=[lat,lng];
   if(!saintMarker){
     lkMarker.remove();
@@ -301,7 +301,7 @@ function placeSaint(lat, lng, cog, sog, nav){
   document.getElementById('v-fix').textContent = new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'});
 
   // Store fix for dead reckoning — timestamp set to NOW
-  const fixTime = Date.now();
+  const fixTime = apiTs || Date.now();
   lastFix = {lat, lng, sog:sog||0, cog:cog||0, ts:fixTime};
 
   // Banner
@@ -333,8 +333,8 @@ function deadReckon() {
   if (!lastFix.lat) return;
   const sog = lastFix.sog > 0.5 ? lastFix.sog : 7.0; // use 7kn default if stale speed
   const elapsed = (Date.now() - lastFix.ts) / 3600000; // hours
-  console.log('DR: elapsed', (elapsed*60).toFixed(1), 'min, sog', sog, 'cog', lastFix.cog);
-  if (elapsed < 0.01) return; // less than 36 seconds, skip
+  // Always project — even a 1-minute lag is worth showing
+  if (elapsed <= 0) return;
   const distNm = sog * elapsed;
   // Convert course to radians (0=N, 90=E, 180=S, 270=W)
   const cogRad = (lastFix.cog * Math.PI) / 180;
@@ -397,9 +397,9 @@ function deadReckon() {
 
 function startDeadReckoning() {
   if (drTimer) clearInterval(drTimer);
-  // Update estimated position every 30 seconds
+  // Run immediately, then every 30 seconds
+  setTimeout(deadReckon, 2000); // 2s delay so marker renders after AIS marker
   drTimer = setInterval(deadReckon, 30000);
-  deadReckon(); // run immediately
 }
 
 function updateLiveVoyageCard() {
@@ -431,9 +431,9 @@ function updateLiveVoyageCard() {
   renderRoutes();
 }
 
-function placeSaintAndRecord(lat,lng,cog,sog,nav){
-  placeSaint(lat,lng,cog,sog,nav);
-  recordPosition(lat,lng,sog,nav);
+function placeSaintAndRecord(lat,lng,cog,sog,nav,apiTs){
+  placeSaint(lat,lng,cog,sog,nav,apiTs);
+  recordPosition(lat,lng,sog,nav,apiTs);
 }
 
 async function fetchLivePosition(){
@@ -486,7 +486,9 @@ async function fetchLivePosition(){
 
     if(parsed && parsed.lat && parsed.lng && !parsed.error){
       // Got coordinates — place on map
-      placeSaintAndRecord(parsed.lat, parsed.lng, parsed.cog||0, parsed.sog||0, parsed.nav||'Unknown');
+      // Parse API timestamp if available
+      const apiTs = parsed.updated ? new Date(parsed.updated).getTime() : null;
+      placeSaintAndRecord(parsed.lat, parsed.lng, parsed.cog||0, parsed.sog||0, parsed.nav||'Unknown', apiTs);
 
       // Update last pos card
       document.getElementById('lp-loc').textContent = parsed.location || `${parsed.lat.toFixed(4)}°N ${Math.abs(parsed.lng).toFixed(4)}°W`;
@@ -619,10 +621,10 @@ toggleBtn.onclick=()=>sidebar.classList.toggle('open');
 
 // ── Voyage recording ──────────────────────────────────────────────────
 let voyageTrack=[], voyageStartTime=null, lastMoving=false;
-function recordPosition(lat,lng,sog,nav){
+function recordPosition(lat,lng,sog,nav,apiTs){
   const moving=sog>0.1; // low threshold in case of stale speed data
   if(moving){
-    if(!voyageStartTime){voyageStartTime=Date.now();voyageTrack=[];log('New voyage — recording track');}
+    if(!voyageStartTime){voyageStartTime=apiTs||Date.now();voyageTrack=[];log('New voyage — recording track from '+new Date(voyageStartTime).toLocaleTimeString());}
     voyageTrack.push([lat,lng]);
   } else if(!moving&&lastMoving&&voyageTrack.length>5){
     saveVoyage();
