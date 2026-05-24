@@ -227,6 +227,7 @@ body{font-family:Inter,sans-serif;background:var(--bg);color:var(--text);overflo
         <div class="stat"><div class="stat-lbl">Course</div><div class="stat-val" id="v-cog">—</div><div class="stat-sub">degrees</div></div>
         <div class="stat"><div class="stat-lbl">Status</div><div class="stat-val" style="font-size:14px" id="v-nav">—</div></div>
         <div class="stat"><div class="stat-lbl">Last Fix</div><div class="stat-val" style="font-size:14px" id="v-fix">—</div></div>
+        <div class="stat" style="grid-column:span 2"><div class="stat-lbl">Est. Arrival</div><div class="stat-val" style="font-size:14px" id="v-eta">—</div><div class="stat-sub" id="v-eta-sub"></div></div>
       </div>
       </div><!-- end sec-body -->
     </div>
@@ -605,7 +606,10 @@ function startDeadReckoning() {
   if (drTimer) clearInterval(drTimer);
   // Run immediately, then every 30 seconds
   setTimeout(deadReckon, 2000); // 2s delay so marker renders after AIS marker
-  drTimer = setInterval(deadReckon, 30000);
+  drTimer = setInterval(() => {
+    deadReckon();
+    if (destCoords) showDestinationEstimate(); // refresh ETA as position updates
+  }, 30000);
 }
 
 function updateLiveVoyageCard() {
@@ -1219,6 +1223,10 @@ function showDestinationEstimate() {
   }
   routePts.push([destCoords.lat, destCoords.lng]);
   destLine = L.polyline(routePts, {color:'#18c37e', weight:2.5, opacity:.5, dashArray:'8,5'}).addTo(map);
+
+  // Update ETA in Current Status
+  document.getElementById('v-eta').textContent = etaStr;
+  document.getElementById('v-eta-sub').textContent = distNm.toFixed(1) + ' nm remaining · ' + sog.toFixed(1) + ' kn';
 
   log(`🏁 Destination: ${destCoords.name || ''} · ${distNm.toFixed(1)} nm · ETA ${etaStr} at ${sog.toFixed(1)} kn`);
   document.getElementById('manual-result').textContent = `ETA ${etaStr} · ${distNm.toFixed(1)} nm at ${sog.toFixed(1)} kn`;
