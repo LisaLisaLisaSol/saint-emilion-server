@@ -298,29 +298,12 @@ async function fetchLivePosition(){
   log('Fetching live position via AI search…');
 
   try{
-    const res = await fetch('https://api.anthropic.com/v1/messages',{
+    // Call our Render proxy which forwards to Anthropic securely
+    const PROXY = 'https://saint-emilion-server.onrender.com/fetch';
+    const res = await fetch(PROXY, {
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({
-        model:'claude-sonnet-4-20250514',
-        max_tokens:1000,
-        tools:[{type:'web_search_20250305',name:'web_search'}],
-        messages:[{role:'user',content:`Search VesselFinder, MarineTraffic, or MyShipTracking for the current AIS position of the tugboat SAINT EMILION, IMO 8741832, MMSI 367399980.
-
-Find and report:
-1. Current latitude and longitude (decimal degrees)
-2. Speed over ground (knots)
-3. Course over ground (degrees)  
-4. Navigational status (underway, moored, at anchor, etc.)
-5. Last AIS update time
-6. Current location description (what waterway, near what landmark)
-
-Format your response as a JSON object like this and nothing else:
-{"lat":40.78,"lng":-74.01,"sog":7.0,"cog":359,"nav":"Underway","location":"Hudson River near Yonkers","updated":"2026-05-23 23:00 UTC","summary":"One sentence description"}
-
-If you cannot find current data, return: {"error":"not found","summary":"Brief explanation of what you found"}`
-        }]
-      })
+      body:JSON.stringify({})
     });
 
     const data = await res.json();
