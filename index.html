@@ -255,7 +255,9 @@ function rotateMarker(mkr, deg){
 // ── State ─────────────────────────────────────────────────────────────
 let saintMarker=null, saintTrail=null, replayMarker=null;
 let shownLines=[], followMode=true;
-const trail = L.polyline([],{color:'#00b7d9',weight:2.5,opacity:.45,dashArray:'7,5'}).addTo(map);
+// Current voyage trail — solid teal line
+const trail = L.polyline([],{color:'#00b7d9',weight:3.5,opacity:.7}).addTo(map);
+let voyageStartMarker = null; // marks where current voyage began
 
 // Last-known ghost marker (mid-Hudson at Yonkers, heading north)
 const lkMarker = L.marker([40.9340,-73.9150],{
@@ -276,6 +278,19 @@ function placeSaint(lat, lng, cog, sog, nav){
   }
   rotateMarker(saintMarker, cog||0);
   trail.addLatLng(ll);
+
+  // Place a start marker on the first position of a voyage
+  if (trail.getLatLngs().length === 1) {
+    if (voyageStartMarker) map.removeLayer(voyageStartMarker);
+    voyageStartMarker = L.circleMarker(ll, {
+      radius:7, color:'#00b7d9', fillColor:'#00b7d9',
+      fillOpacity:.9, weight:2
+    }).addTo(map);
+    voyageStartMarker.bindTooltip('Voyage start', {permanent:false,direction:'top'});
+  }
+
+  // Update the live voyage card in sidebar every 5 positions
+  if (trail.getLatLngs().length % 5 === 0) updateLiveVoyageCard();
 
   // Update stats
   document.getElementById('v-spd').textContent = sog!=null ? sog.toFixed(1) : '—';
@@ -303,6 +318,35 @@ function placeSaint(lat, lng, cog, sog, nav){
 }
 
 // ── AI Fetch ──────────────────────────────────────────────────────────
+function updateLiveVoyageCard() {
+  const pts = trail.getLatLngs();
+  if (pts.length < 2) return;
+
+  // Calculate distance traveled (rough, in nm)
+  let nm = 0;
+  for (let i = 1; i < pts.length; i++) {
+    const dlat = pts[i].lat - pts[i-1].lat;
+    const dlng = pts[i].lng - pts[i-1].lng;
+    nm += Math.sqrt(dlat*dlat + dlng*dlng) * 60;
+  }
+
+  // Update or create the live voyage entry in localStorage
+  const saved = JSON.parse(localStorage.getItem('saved_voyages') || '[]');
+  const liveIdx = saved.findIndex(v => v.live && v.inProgress);
+  const liveEntry = {
+    name: 'Current Voyage',
+    date: voyageStartTime ? new Date(voyageStartTime).toLocaleDateString('en-US',{month:'short',day:'numeric'}) + ' · ' + nm.toFixed(1) + ' nm so far' : 'In progress',
+    color: '#00b7d9',
+    track: pts.map(p => [p.lat, p.lng]),
+    live: true,
+    inProgress: true
+  };
+  if (liveIdx >= 0) saved[liveIdx] = liveEntry;
+  else saved.unshift(liveEntry);
+  localStorage.setItem('saved_voyages', JSON.stringify(saved.slice(0,4)));
+  renderRoutes();
+}
+
 function placeSaintAndRecord(lat,lng,cog,sog,nav){
   placeSaint(lat,lng,cog,sog,nav);
   recordPosition(lat,lng,sog,nav);
@@ -504,10 +548,24 @@ function recordPosition(lat,lng,sog,nav){
 function saveVoyage(){
   if(voyageTrack.length<3){voyageTrack=[];voyageStartTime=null;return;}
   const saved=JSON.parse(localStorage.getItem('saved_voyages')||'[]');
-  saved.unshift({name:'Live Voyage',date:new Date(voyageStartTime).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}),color:'#00b7d9',track:[...voyageTrack],live:true});
+  // Remove in-progress entry if exists
+  const inProgIdx = saved.findIndex(v => v.inProgress);
+  if (inProgIdx >= 0) saved.splice(inProgIdx, 1);
+  saved.unshift({
+    name:'Completed Voyage',
+    date:new Date(voyageStartTime).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}),
+    color:'#22d97a',
+    track:[...voyageTrack],
+    live:true,
+    inProgress:false
+  });
   localStorage.setItem('saved_voyages',JSON.stringify(saved.slice(0,3)));
   log('Voyage saved: '+voyageTrack.length+' points');
-  voyageTrack=[];voyageStartTime=null;renderRoutes();
+  voyageTrack=[];voyageStartTime=null;
+  // Reset trail for next voyage
+  trail.setLatLngs([]);
+  if(voyageStartMarker){map.removeLayer(voyageStartMarker);voyageStartMarker=null;}
+  renderRoutes();
 }
 
 // ── Auto-polling ───────────────────────────────────────────────────────
@@ -546,3 +604,4 @@ startPolling(30);
 </script>
 </body>
 </html>
+
