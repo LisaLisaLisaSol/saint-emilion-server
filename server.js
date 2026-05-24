@@ -48,7 +48,8 @@ const httpServer = http.createServer(async (req, res) => {
     // ── Try VesselAPI first ──────────────────────────────
     if (VESSELAPI_KEY) {
       console.log('Trying VesselAPI...');
-      const url = `https://api.vesselapi.com/v1/vessel/position?mmsi=${MMSI}`;
+      // Correct VesselAPI endpoint: /v1/vessel/{id}/position?filter.idType=mmsi
+      const url = `https://api.vesselapi.com/v1/vessel/${MMSI}/position?filter.idType=mmsi`;
       const r = await new Promise((resolve, reject) => {
         https.get(url, {
           headers: {
