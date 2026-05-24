@@ -329,19 +329,62 @@ function placeSaint(lat, lng, cog, sog, nav, apiTs){
 // ── AI Fetch ──────────────────────────────────────────────────────────
 // ── Dead Reckoning ────────────────────────────────────────────────────
 // Projects estimated position forward from last AIS fix using speed + course
+// Hudson River centerline waypoints (south to north)
+const HUDSON = [
+  [40.5030,-74.2750],[40.6520,-74.0170],[40.6574,-74.1130],
+  [40.6900,-74.0200],[40.7300,-74.0150],[40.7680,-74.0050],
+  [40.8000,-73.9900],[40.8510,-73.9520],[40.9340,-73.9150],
+  [40.9800,-73.9050],[41.0600,-73.9100],[41.1800,-73.9200],
+  [41.2900,-73.9600],[41.3700,-73.9550],[41.4200,-73.9700],
+  [41.5030,-74.0080],[41.5800,-73.9700],[41.7200,-73.9600],
+  [41.8500,-73.9500],[41.9230,-73.9750],[42.0200,-73.9600],
+  [42.1500,-73.9500],[42.2500,-73.9200],[42.3500,-73.8800],
+  [42.5000,-73.8000],[42.6400,-73.7500]
+];
+
+// Find nearest Hudson waypoint to a lat/lng
+function nearestHudsonIdx(lat, lng) {
+  let best = 0, bestDist = Infinity;
+  HUDSON.forEach((pt, i) => {
+    const d = Math.sqrt((pt[0]-lat)**2 + (pt[1]-lng)**2);
+    if (d < bestDist) { bestDist = d; best = i; }
+  });
+  return best;
+}
+
+// Project distNm along the Hudson river from a starting index
+function projectAlongHudson(startIdx, distNm, goingNorth) {
+  let remaining = distNm;
+  let idx = startIdx;
+  let lat = HUDSON[idx][0], lng = HUDSON[idx][1];
+  const step = goingNorth ? 1 : -1;
+  while (remaining > 0 && idx + step >= 0 && idx + step < HUDSON.length) {
+    const next = HUDSON[idx + step];
+    const segNm = Math.sqrt((next[0]-lat)**2 + (next[1]-lng)**2) * 60;
+    if (segNm >= remaining) {
+      const t = remaining / segNm;
+      lat = lat + (next[0]-lat)*t;
+      lng = lng + (next[1]-lng)*t;
+      remaining = 0;
+    } else {
+      remaining -= segNm;
+      idx += step;
+      lat = HUDSON[idx][0];
+      lng = HUDSON[idx][1];
+    }
+  }
+  return [lat, lng];
+}
+
 function deadReckon() {
   if (!lastFix.lat) return;
-  const sog = lastFix.sog > 0.5 ? lastFix.sog : 7.0; // use 7kn default if stale speed
+  const sog = lastFix.sog > 0.5 ? lastFix.sog : 7.0;
   const elapsed = (Date.now() - lastFix.ts) / 3600000; // hours
-  // Always project — even a 1-minute lag is worth showing
   if (elapsed <= 0) return;
   const distNm = sog * elapsed;
-  // Convert course to radians (0=N, 90=E, 180=S, 270=W)
-  const cogRad = (lastFix.cog * Math.PI) / 180;
-  const dLat = (distNm / 60) * Math.cos(cogRad);
-  const dLng = (distNm / 60) * Math.sin(cogRad) / Math.cos(lastFix.lat * Math.PI / 180);
-  const estLat = lastFix.lat + dLat;
-  const estLng = lastFix.lng + dLng;
+  const goingNorth = lastFix.cog < 180; // heading north if COG < 180
+  const startIdx = nearestHudsonIdx(lastFix.lat, lastFix.lng);
+  const [estLat, estLng] = projectAlongHudson(startIdx, distNm, goingNorth);
   const ageMin = Math.round((Date.now() - lastFix.ts) / 60000);
 
   if (!drMarker) {
@@ -387,12 +430,19 @@ function deadReckon() {
     </div>
   </div>`);
 
-  // Draw a dashed line from last AIS fix to estimated position
+  // Draw a dashed line following the Hudson river
   if (window._drLine) map.removeLayer(window._drLine);
-  window._drLine = L.polyline(
-    [[lastFix.lat, lastFix.lng], [estLat, estLng]],
-    {color:'#f5a623', weight:2, opacity:.5, dashArray:'6,4'}
-  ).addTo(map);
+  const startIdx2 = nearestHudsonIdx(lastFix.lat, lastFix.lng);
+  const endIdx2 = nearestHudsonIdx(estLat, estLng);
+  const pathPts = [[lastFix.lat, lastFix.lng]];
+  const step2 = goingNorth ? 1 : -1;
+  let i2 = startIdx2;
+  while (i2 !== endIdx2 && i2 + step2 >= 0 && i2 + step2 < HUDSON.length) {
+    i2 += step2;
+    pathPts.push(HUDSON[i2]);
+  }
+  pathPts.push([estLat, estLng]);
+  window._drLine = L.polyline(pathPts, {color:'#f5a623', weight:2, opacity:.5, dashArray:'6,4'}).addTo(map);
 }
 
 function startDeadReckoning() {
@@ -486,8 +536,13 @@ async function fetchLivePosition(){
 
     if(parsed && parsed.lat && parsed.lng && !parsed.error){
       // Got coordinates — place on map
-      // Parse API timestamp if available
-      const apiTs = parsed.updated ? new Date(parsed.updated).getTime() : null;
+      // Parse API timestamp - VesselAPI returns ISO format
+      let apiTs = null;
+      if (parsed.updated) {
+        const t = new Date(parsed.updated);
+        apiTs = isNaN(t.getTime()) ? null : t.getTime();
+        if (apiTs) log('AIS fix timestamp: ' + t.toLocaleString());
+      }
       placeSaintAndRecord(parsed.lat, parsed.lng, parsed.cog||0, parsed.sog||0, parsed.nav||'Unknown', apiTs);
 
       // Update last pos card
