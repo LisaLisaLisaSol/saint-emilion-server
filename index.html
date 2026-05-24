@@ -130,6 +130,36 @@ body{font-family:Inter,sans-serif;background:var(--bg);color:var(--text);overflo
       <div id="fetch-status">Starting auto-update…</div>
     </div>
 
+    <!-- Manual position inputs -->
+    <div id="manual-wrap" style="padding:14px 20px;border-bottom:1px solid var(--border)">
+      <div style="font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);margin-bottom:10px">📍 Manual Position</div>
+
+      <div style="margin-bottom:8px">
+        <label style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;display:block;margin-bottom:4px">Started at</label>
+        <div style="display:flex;gap:6px">
+          <select id="sel-start" style="flex:1;padding:7px 8px;border:1px solid var(--border);border-radius:8px;font-size:12px;font-family:Inter,sans-serif;color:var(--text);background:#f8fbfd">
+            <option value="">— Select dock —</option>
+          </select>
+          <input type="time" id="time-start" style="width:90px;padding:7px 8px;border:1px solid var(--border);border-radius:8px;font-size:12px;font-family:Inter,sans-serif;color:var(--text);background:#f8fbfd">
+        </div>
+      </div>
+
+      <div style="margin-bottom:10px">
+        <label style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;display:block;margin-bottom:4px">Currently at (optional)</label>
+        <div style="display:flex;gap:6px">
+          <select id="sel-current" style="flex:1;padding:7px 8px;border:1px solid var(--border);border-radius:8px;font-size:12px;font-family:Inter,sans-serif;color:var(--text);background:#f8fbfd">
+            <option value="">— Select or skip —</option>
+          </select>
+        </div>
+        <input id="txt-custom" placeholder="Or type any location (e.g. New Hamburg)" style="width:100%;margin-top:5px;padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px;font-family:Inter,sans-serif;color:var(--text);background:#f8fbfd">
+      </div>
+
+      <button type="button" id="btn-manual-apply" style="width:100%;padding:9px;background:rgba(0,183,217,.12);border:1.5px solid rgba(0,183,217,.35);border-radius:9px;color:var(--accent);font-weight:700;font-size:12px;cursor:pointer;font-family:Inter,sans-serif">
+        ↻ Recalibrate
+      </button>
+      <div id="manual-result" style="margin-top:8px;font-size:11px;color:var(--muted);min-height:14px;line-height:1.5"></div>
+    </div>
+
     <div id="ai-result">
       <div id="ai-box">
         <div class="ai-label">📡 Live AIS Report</div>
@@ -789,7 +819,144 @@ function renderRoutes(){
   });
 }
 
+// ── Manual position calibration ───────────────────────────────────────
+function populateDockSelects() {
+  const dockOpts = DOCKS.map(d => `<option value="${d.lat},${d.lng}">${d.name}</option>`).join('');
+  document.getElementById('sel-start').innerHTML = '<option value="">— Select dock —</option>' + dockOpts;
+  document.getElementById('sel-current').innerHTML = '<option value="">— Select or skip —</option>' + dockOpts;
+}
+
+// Geocode a text location using Nominatim
+async function geocodeLocation(text) {
+  try {
+    const r = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(text+' Hudson River New York')}&format=json&limit=1`,{headers:{'Accept-Language':'en'}});
+    const d = await r.json();
+    if (d.length > 0) return {lat: parseFloat(d[0].lat), lng: parseFloat(d[0].lon), name: d[0].display_name.split(',')[0]};
+  } catch(_) {}
+  return null;
+}
+
+document.getElementById('btn-manual-apply').addEventListener('click', async () => {
+  const btn = document.getElementById('btn-manual-apply');
+  const result = document.getElementById('manual-result');
+  const startVal = document.getElementById('sel-start').value;
+  const timeVal = document.getElementById('time-start').value;
+  const currentVal = document.getElementById('sel-current').value;
+  const customTxt = document.getElementById('txt-custom').value.trim();
+
+  if (!startVal) { result.textContent = '⚠️ Please select a starting dock'; result.style.color='var(--danger)'; return; }
+  if (!timeVal) { result.textContent = '⚠️ Please enter a departure time'; result.style.color='var(--danger)'; return; }
+
+  btn.textContent = '↻ Recalibrating…'; btn.disabled = true;
+
+  const [startLat, startLng] = startVal.split(',').map(Number);
+
+  // Build departure timestamp from today + time input
+  const [hh, mm] = timeVal.split(':').map(Number);
+  const depTime = new Date();
+  depTime.setHours(hh, mm, 0, 0);
+  // If time is in the future (e.g. 11pm entered at 1am next day), subtract a day
+  if (depTime.getTime() > Date.now()) depTime.setDate(depTime.getDate() - 1);
+  const depTs = depTime.getTime();
+
+  // Set voyage start
+  voyageStartTime = depTs;
+  voyageTrack = [[startLat, startLng]];
+  estPositions = [];
+  lastEstLat = null; lastEstLng = null;
+
+  // Place start marker
+  if (voyageStartMarker) map.removeLayer(voyageStartMarker);
+  voyageStartMarker = L.circleMarker([startLat, startLng], {
+    radius:8, color:'#00b7d9', fillColor:'#00b7d9', fillOpacity:.9, weight:2
+  }).addTo(map);
+  voyageStartMarker.bindTooltip('Voyage start: ' + document.getElementById('sel-start').options[document.getElementById('sel-start').selectedIndex].text, {permanent:false, direction:'top'});
+
+  // Draw trail from start to last AIS fix
+  trail.setLatLngs([[startLat, startLng]]);
+  if (lastFix.lat) trail.addLatLng([lastFix.lat, lastFix.lng]);
+
+  let infoText = '';
+
+  // If "currently at" is provided, recalculate speed
+  let currentCoords = null;
+  let currentName = '';
+
+  if (currentVal) {
+    const [cLat, cLng] = currentVal.split(',').map(Number);
+    currentCoords = {lat: cLat, lng: cLng};
+    currentName = document.getElementById('sel-current').options[document.getElementById('sel-current').selectedIndex].text;
+  } else if (customTxt) {
+    result.textContent = 'Geocoding location…';
+    currentCoords = await geocodeLocation(customTxt);
+    if (currentCoords) currentName = customTxt;
+    else { result.textContent = '⚠️ Could not find that location — try a dock from the list'; result.style.color='var(--danger)'; btn.textContent='↻ Recalibrate'; btn.disabled=false; return; }
+  }
+
+  if (currentCoords) {
+    // Calculate actual distance traveled along Hudson
+    const startIdx = nearestHudsonIdx(startLat, startLng);
+    const currentIdx = nearestHudsonIdx(currentCoords.lat, currentCoords.lng);
+    let distNm = 0;
+    const goingN = currentIdx > startIdx;
+    for (let i = Math.min(startIdx, currentIdx); i < Math.max(startIdx, currentIdx); i++) {
+      const a = HUDSON[i], b = HUDSON[i+1];
+      distNm += Math.sqrt((b[0]-a[0])**2 + (b[1]-a[1])**2) * 60;
+    }
+
+    // Recalculate actual speed
+    const elapsedHrs = (Date.now() - depTs) / 3600000;
+    const actualSog = elapsedHrs > 0 ? distNm / elapsedHrs : lastFix.sog || 7;
+
+    // Update lastFix with corrected position and speed
+    lastFix = {
+      lat: currentCoords.lat,
+      lng: currentCoords.lng,
+      sog: actualSog,
+      cog: lastFix.cog || 12,
+      ts: Date.now()
+    };
+
+    infoText = `📍 ${currentName} · ${distNm.toFixed(1)} nm in ${elapsedHrs.toFixed(1)} hrs = ${actualSog.toFixed(1)} kn actual`;
+    result.style.color = 'var(--live)';
+
+    // Move teal marker to corrected position
+    if (saintMarker) {
+      saintMarker.setLatLng([currentCoords.lat, currentCoords.lng]);
+      rotateMarker(saintMarker, lastFix.cog);
+    }
+
+    // Redraw trail
+    const startHudsonIdx = nearestHudsonIdx(startLat, startLng);
+    const currentHudsonIdx = nearestHudsonIdx(currentCoords.lat, currentCoords.lng);
+    const trailPts = [[startLat, startLng]];
+    const step = goingN ? 1 : -1;
+    let idx = startHudsonIdx;
+    while (idx !== currentHudsonIdx && idx+step >= 0 && idx+step < HUDSON.length) {
+      idx += step; trailPts.push(HUDSON[idx]);
+    }
+    trailPts.push([currentCoords.lat, currentCoords.lng]);
+    trail.setLatLngs(trailPts);
+
+    // Restart DR from corrected position
+    deadReckon();
+    log('Recalibrated: ' + infoText);
+  } else {
+    infoText = `Departure set: ${depTime.toLocaleTimeString()} from ${document.getElementById('sel-start').options[document.getElementById('sel-start').selectedIndex].text}`;
+    result.style.color = 'var(--muted)';
+  }
+
+  result.textContent = infoText;
+
+  // Update voyage card
+  updateLiveVoyageCard();
+  renderRoutes();
+
+  btn.textContent = '↻ Recalibrate'; btn.disabled = false;
+});
+
 // ── Boot ──────────────────────────────────────────────────────────────
+populateDockSelects();
 renderRoutes();
 log('Starting live tracker…');
 document.querySelectorAll('.interval-btn').forEach(btn=>btn.addEventListener('click',()=>startPolling(parseInt(btn.dataset.seconds))));
