@@ -254,6 +254,8 @@ function rotateMarker(mkr, deg){
 
 // ── State ─────────────────────────────────────────────────────────────
 let saintMarker=null, saintTrail=null, replayMarker=null;
+let drMarker=null, drTimer=null; // dead reckoning
+let lastFix={lat:null,lng:null,sog:0,cog:0,ts:null}; // last confirmed AIS fix
 let shownLines=[], followMode=true;
 // Current voyage trail — solid teal line
 const trail = L.polyline([],{color:'#00b7d9',weight:3.5,opacity:.7}).addTo(map);
@@ -298,6 +300,10 @@ function placeSaint(lat, lng, cog, sog, nav){
   document.getElementById('v-nav').textContent = nav||'—';
   document.getElementById('v-fix').textContent = new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'});
 
+  // Store fix for dead reckoning
+  lastFix = {lat, lng, sog:sog||0, cog:cog||0, ts:Date.now()};
+  startDeadReckoning();
+
   // Banner
   document.getElementById('banner-sub').textContent = `${lat.toFixed(4)}°N  ${Math.abs(lng).toFixed(4)}°W`;
   document.getElementById('banner-live').classList.add('on');
@@ -318,6 +324,78 @@ function placeSaint(lat, lng, cog, sog, nav){
 }
 
 // ── AI Fetch ──────────────────────────────────────────────────────────
+// ── Dead Reckoning ────────────────────────────────────────────────────
+// Projects estimated position forward from last AIS fix using speed + course
+function deadReckon() {
+  if (!lastFix.lat || !lastFix.sog) return;
+  const elapsed = (Date.now() - lastFix.ts) / 3600000; // hours
+  const distNm = lastFix.sog * elapsed;
+  // Convert course to radians (0=N, 90=E, 180=S, 270=W)
+  const cogRad = (lastFix.cog * Math.PI) / 180;
+  const dLat = (distNm / 60) * Math.cos(cogRad);
+  const dLng = (distNm / 60) * Math.sin(cogRad) / Math.cos(lastFix.lat * Math.PI / 180);
+  const estLat = lastFix.lat + dLat;
+  const estLng = lastFix.lng + dLng;
+  const ageMin = Math.round((Date.now() - lastFix.ts) / 60000);
+
+  if (!drMarker) {
+    drMarker = L.marker([estLat, estLng], {
+      icon: L.divIcon({
+        className: '',
+        iconSize: [52, 52],
+        iconAnchor: [26, 26],
+        html: `<div style="position:relative;width:52px;height:52px">
+          <div style="position:absolute;top:-22px;left:50%;transform:translateX(-50%);background:rgba(245,166,35,.9);color:#fff;border-radius:7px;padding:2px 8px;font-size:9px;font-weight:700;white-space:nowrap;font-family:Inter,sans-serif" id="dr-label">EST</div>
+          <svg width="52" height="52" viewBox="0 0 48 48" style="opacity:.7">
+            <circle cx="24" cy="24" r="21" fill="#f5a623" fill-opacity=".12" stroke="#f5a623" stroke-width="1.5" stroke-opacity=".5" stroke-dasharray="4,3"/>
+            <path d="M24 4 L34 18 L34 36 Q34 42 24 44 Q14 42 14 36 L14 18 Z" fill="#f5a623" stroke="white" stroke-width="1.5" opacity=".8"/>
+            <path d="M18 12 L24 4 L30 12 Z" fill="white" opacity=".8"/>
+            <circle cx="24" cy="32" r="4" fill="white" opacity=".7"/>
+          </svg>
+        </div>`
+      }),
+      zIndexOffset: 500
+    }).addTo(map);
+    drMarker.bindPopup('');
+  } else {
+    drMarker.setLatLng([estLat, estLng]);
+  }
+
+  // Rotate to match course
+  const el = drMarker.getElement();
+  if (el) {
+    const svg = el.querySelector('svg');
+    if (svg) { svg.style.transform = `rotate(${lastFix.cog}deg)`; svg.style.transformOrigin = 'center'; }
+    const lbl = el.querySelector('#dr-label');
+    if (lbl) lbl.textContent = `EST +${ageMin}m`;
+  }
+
+  // Update popup
+  drMarker.bindPopup(`<div style="font-family:Inter,sans-serif;min-width:180px">
+    <b style="font-size:13px">⚠️ Estimated Position</b>
+    <div style="font-size:11px;color:#888;margin-top:4px;line-height:1.6">
+      Based on last AIS fix ${ageMin} min ago<br>
+      Projected at ${lastFix.sog.toFixed(1)} kn · ${Math.round(lastFix.cog)}° course<br>
+      <b>${estLat.toFixed(4)}°N ${Math.abs(estLng).toFixed(4)}°W</b><br>
+      <span style="color:#f5a623">~${distNm.toFixed(1)} nm from last fix</span>
+    </div>
+  </div>`);
+
+  // Draw a dashed line from last AIS fix to estimated position
+  if (window._drLine) map.removeLayer(window._drLine);
+  window._drLine = L.polyline(
+    [[lastFix.lat, lastFix.lng], [estLat, estLng]],
+    {color:'#f5a623', weight:2, opacity:.5, dashArray:'6,4'}
+  ).addTo(map);
+}
+
+function startDeadReckoning() {
+  if (drTimer) clearInterval(drTimer);
+  // Update estimated position every 30 seconds
+  drTimer = setInterval(deadReckon, 30000);
+  deadReckon(); // run immediately
+}
+
 function updateLiveVoyageCard() {
   const pts = trail.getLatLngs();
   if (pts.length < 2) return;
@@ -604,4 +682,5 @@ startPolling(30);
 </script>
 </body>
 </html>
+
 
