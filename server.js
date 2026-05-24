@@ -1,6 +1,4 @@
 // Saint Emilion AIS Relay Server
-// Connects to aisstream.io server-side (allowed), forwards to browser clients
-
 const { WebSocketServer, WebSocket } = require('ws');
 const http = require('http');
 
@@ -8,74 +6,108 @@ const PORT = process.env.PORT || 3000;
 const AIS_KEY = process.env.AIS_KEY || '';
 const BOUNDING_BOX = [[39.5, -75.5], [42.5, -71.5]];
 
-// Simple HTTP server (Railway needs an HTTP port to stay alive)
 const httpServer = http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/plain' });
   res.end('Saint Emilion AIS Relay — OK');
 });
 
-// WebSocket server that browser clients connect to
 const wss = new WebSocketServer({ server: httpServer });
 
-console.log(`Relay server starting on port ${PORT}`);
-
 let aisWs = null;
-let browserClients = new Set();
 let reconnectTimer = null;
+let isConnecting = false;
+let browserClients = new Set();
 
-// ── Connect to aisstream.io ──────────────────────────────
+function broadcast(obj) {
+  const msg = JSON.stringify(obj);
+  for (const client of browserClients) {
+    if (client.readyState === WebSocket.OPEN) client.send(msg);
+  }
+}
+
 function connectToAIS() {
-  if (!AIS_KEY) {
-    console.error('No AIS_KEY environment variable set!');
+  // Prevent duplicate connections
+  if (isConnecting || (aisWs && aisWs.readyState === WebSocket.OPEN)) {
+    console.log('Already connected or connecting — skipping');
+    return;
+  }
+  if (!AIS_KEY) { console.error('No AIS_KEY set'); return; }
+
+  isConnecting = true;
+  console.log('Connecting to aisstream.io...');
+
+  try {
+    aisWs = new WebSocket('wss://stream.aisstream.io/v0/stream', {
+      handshakeTimeout: 10000
+    });
+  } catch(e) {
+    console.error('Failed to create WebSocket:', e.message);
+    isConnecting = false;
+    scheduleReconnect();
     return;
   }
 
-  console.log('Connecting to aisstream.io...');
-  aisWs = new WebSocket('wss://stream.aisstream.io/v0/stream');
-
   aisWs.on('open', () => {
-    console.log('Connected to aisstream.io');
+    isConnecting = false;
+    console.log('Connected to aisstream.io ✓');
+    broadcast({ type: 'status', status: 'connected' });
+
+    // Send subscription
     aisWs.send(JSON.stringify({
       Apikey: AIS_KEY,
       BoundingBoxes: [BOUNDING_BOX],
       FilterMessageTypes: ['PositionReport']
     }));
-    broadcast({ type: 'status', status: 'connected' });
+
+    // Keep-alive ping every 30s to prevent idle timeout
+    aisWs._pingInterval = setInterval(() => {
+      if (aisWs && aisWs.readyState === WebSocket.OPEN) {
+        aisWs.ping();
+      }
+    }, 30000);
   });
 
   aisWs.on('message', (data) => {
-    // Forward raw AIS message to all connected browser clients
     const text = data.toString();
     broadcast({ type: 'ais', data: text });
   });
 
-  aisWs.on('close', (code) => {
-    console.log(`aisstream.io disconnected (${code}) — retrying in 5s`);
+  aisWs.on('ping', () => {
+    if (aisWs) aisWs.pong();
+  });
+
+  aisWs.on('close', (code, reason) => {
+    isConnecting = false;
+    if (aisWs && aisWs._pingInterval) {
+      clearInterval(aisWs._pingInterval);
+    }
+    console.log(`aisstream.io disconnected (${code}) ${reason || ''}`);
     broadcast({ type: 'status', status: 'reconnecting' });
-    reconnectTimer = setTimeout(connectToAIS, 5000);
+    aisWs = null;
+    scheduleReconnect();
   });
 
   aisWs.on('error', (err) => {
+    isConnecting = false;
     console.error('aisstream error:', err.message);
+    // close handler will fire after this and schedule reconnect
   });
 }
 
-// ── Broadcast to all browser clients ────────────────────
-function broadcast(obj) {
-  const msg = JSON.stringify(obj);
-  for (const client of browserClients) {
-    if (client.readyState === WebSocket.OPEN) {
-      client.send(msg);
-    }
-  }
+function scheduleReconnect() {
+  if (reconnectTimer) return; // already scheduled
+  console.log('Reconnecting in 8s...');
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    connectToAIS();
+  }, 8000);
 }
 
-// ── Handle browser client connections ───────────────────
-wss.on('connection', (clientWs, req) => {
+wss.on('connection', (clientWs) => {
   console.log(`Browser client connected (${browserClients.size + 1} total)`);
   browserClients.add(clientWs);
 
-  // Send current AIS connection status immediately
+  // Tell client current status
   const status = aisWs && aisWs.readyState === WebSocket.OPEN ? 'connected' : 'reconnecting';
   clientWs.send(JSON.stringify({ type: 'status', status }));
 
@@ -83,14 +115,10 @@ wss.on('connection', (clientWs, req) => {
     browserClients.delete(clientWs);
     console.log(`Browser client disconnected (${browserClients.size} remaining)`);
   });
-
-  clientWs.on('error', () => {
-    browserClients.delete(clientWs);
-  });
+  clientWs.on('error', () => browserClients.delete(clientWs));
 });
 
-// ── Start ────────────────────────────────────────────────
 httpServer.listen(PORT, () => {
-  console.log(`HTTP + WS server listening on port ${PORT}`);
+  console.log(`Listening on port ${PORT}`);
   connectToAIS();
 });
