@@ -153,11 +153,24 @@ const httpServer = http.createServer(async (req, res) => {
       else console.log('aisstream wait timed out — trying fallbacks');
     }
 
-    if (aisCache && (Date.now() - aisCache.ts) < 600000) {  // within 10 min
-      console.log('Serving from aisstream cache, age:', Math.round((Date.now()-aisCache.ts)/1000)+'s');
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ content: [{ type: 'text', text: JSON.stringify(aisCache) }] }));
-      return;
+    if (aisCache) {
+      const ageMs = Date.now() - aisCache.ts;
+      const ageMins = Math.round(ageMs / 60000);
+      if (ageMs < 600000) {
+        // Fresh — serve as live position
+        console.log('Serving fresh aisstream cache, age:', ageMins + 'min');
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ content: [{ type: 'text', text: JSON.stringify(aisCache) }] }));
+        return;
+      } else {
+        // Stale — return as last_known so client knows not to treat it as current
+        console.log('aisstream cache is stale (' + ageMins + 'min) — returning as last_known');
+        const stale = { ...aisCache, stale: true, staleMinutes: ageMins,
+          summary: `Last known position ${ageMins} min ago: ${aisCache.location} · ${aisCache.sog} kn · ${aisCache.nav}` };
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ content: [{ type: 'text', text: JSON.stringify(stale) }] }));
+        return;
+      }
     }
 
     // ── 2. VesselAPI ─────────────────────────────────────────────────────────
@@ -259,3 +272,4 @@ httpServer.listen(PORT, () => {
   // Start aisstream connection
   connectAisstream();
 });
+
