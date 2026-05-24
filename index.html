@@ -119,6 +119,166 @@ body{font-family:Inter,sans-serif;background:var(--bg);color:var(--text);overflo
 .sec-body.hidden{display:none}
 .collapsible-wrap{border-bottom:none!important;padding:0!important}
 .collapsible-wrap>.sec{border:none;border-radius:0;margin:0}
+
+/* ── Iron Maiden Dark Skin ── */
+body.dark-skin {
+  --bg:#0a0603;
+  --card:#100804;
+  --border:#3a1200;
+  --text:#e0ccaa;
+  --muted:#7a5030;
+  --accent:#cc2200;
+  --live:#22cc60;
+  --warn:#cc8800;
+  --danger:#ff2200;
+}
+body.dark-skin #sidebar {
+  background:var(--card);
+  border-right:1px solid var(--border);
+}
+body.dark-skin #hdr {
+  background:linear-gradient(180deg,#130805 0%,#0c0502 100%);
+  border-bottom:2px solid var(--accent);
+}
+body.dark-skin .vname {
+  color:#d4b060;
+  text-shadow:0 0 30px rgba(200,30,0,0.3);
+}
+body.dark-skin .eyebrow { color:#6a3010; }
+body.dark-skin .vmeta   { color:#5a3010; }
+body.dark-skin #btn-fetch {
+  background:var(--accent);
+  box-shadow:0 3px 14px rgba(180,0,0,0.4);
+}
+body.dark-skin #btn-fetch:hover {
+  box-shadow:0 4px 18px rgba(200,0,0,0.55);
+}
+body.dark-skin .stat {
+  background:rgba(20,8,3,0.8);
+  border-color:var(--border);
+}
+body.dark-skin .stat.hi {
+  background:rgba(120,10,0,0.25);
+  border-color:rgba(180,20,0,0.4);
+}
+body.dark-skin .stat.hi .stat-val { color:#cc3318; }
+body.dark-skin .stat-val { color:#c8a050; }
+body.dark-skin .stat-lbl { color:var(--muted); }
+body.dark-skin .sec-header { border-color:var(--border); }
+body.dark-skin .sec-header:hover { background:rgba(60,18,0,0.3); }
+body.dark-skin .sec-body { border-color:var(--border); }
+body.dark-skin .route {
+  background:rgba(15,6,2,0.8);
+  border-color:var(--border);
+}
+body.dark-skin .route:hover { box-shadow:0 2px 10px rgba(180,0,0,0.15); }
+body.dark-skin .rbtn {
+  background:rgba(15,6,2,0.8);
+  border-color:var(--border);
+  color:var(--muted);
+}
+body.dark-skin .rbtn:hover {
+  border-color:var(--accent);
+  color:var(--accent);
+  background:rgba(80,10,0,0.3);
+}
+body.dark-skin .interval-btn {
+  background:rgba(15,6,2,0.8);
+  border-color:var(--border);
+  color:var(--muted);
+}
+body.dark-skin .interval-btn.active {
+  background:var(--accent);
+  color:#e0ccaa;
+  border-color:var(--accent);
+  box-shadow:0 2px 8px rgba(180,0,0,0.35);
+}
+body.dark-skin .sec-title { color:var(--muted); }
+body.dark-skin #divider { background:var(--border); }
+body.dark-skin #divider:hover,
+body.dark-skin #divider.dragging { background:var(--accent); }
+body.dark-skin #log-wrap { color:var(--muted); }
+body.dark-skin #log-wrap div { border-color:var(--border); }
+body.dark-skin #last-pos {
+  background:linear-gradient(135deg,rgba(60,10,0,0.3),rgba(30,5,0,0.3));
+  border-color:rgba(180,30,0,0.25);
+}
+body.dark-skin #map-banner {
+  background:rgba(8,3,1,0.94);
+  border-color:var(--border);
+  color:var(--text);
+}
+body.dark-skin .banner-name { color:#c8a050; }
+body.dark-skin .banner-sub  { color:var(--muted); }
+body.dark-skin .mbtn {
+  background:rgba(8,3,1,0.92);
+  border-color:var(--border);
+  color:var(--muted);
+}
+body.dark-skin .mbtn:hover {
+  border-color:var(--accent);
+  color:var(--accent);
+}
+body.dark-skin .mbtn.active {
+  background:var(--accent);
+  color:#e0ccaa;
+  border-color:var(--accent);
+}
+body.dark-skin .ac-inp {
+  background:rgba(15,6,2,0.9);
+  border-color:var(--border);
+  color:var(--text);
+}
+body.dark-skin .ac-inp:focus { border-color:var(--accent); }
+body.dark-skin .ac-list {
+  background:rgba(12,5,2,0.98);
+  border-color:var(--border);
+}
+body.dark-skin .ac-item { border-color:var(--border); color:var(--text); }
+body.dark-skin .ac-item:hover { background:rgba(60,10,0,0.4); color:var(--accent); }
+body.dark-skin #fetch-status { color:var(--muted); }
+body.dark-skin #toggle-sidebar {
+  background:rgba(8,3,1,0.95);
+  border-color:var(--border);
+  color:var(--text);
+}
+body.dark-skin #skin-toggle {
+  background:rgba(15,6,2,0.9);
+  border-color:var(--border);
+  color:#c8a050;
+}
+body.dark-skin #skin-toggle:hover {
+  border-color:#c8a050;
+  background:rgba(40,18,0,0.5);
+}
+
+/* Skin toggle button — base styles */
+#skin-toggle {
+  position:absolute;
+  top:14px;
+  right:16px;
+  background:#f8fbfd;
+  border:1px solid var(--border);
+  border-radius:20px;
+  padding:5px 10px;
+  font-size:11px;
+  font-weight:600;
+  cursor:pointer;
+  font-family:Inter,sans-serif;
+  color:var(--muted);
+  transition:all .2s;
+  z-index:10;
+  white-space:nowrap;
+  display:flex;
+  align-items:center;
+  gap:5px;
+  line-height:1;
+}
+#skin-toggle:hover {
+  border-color:var(--accent);
+  color:var(--accent);
+}
+#hdr { position:relative; }
 </style>
 </head>
 <body>
@@ -127,6 +287,7 @@ body{font-family:Inter,sans-serif;background:var(--bg);color:var(--text);overflo
   <div id="sidebar">
     <div id="hdr">
       <div class="eyebrow">⚓ Vessel Tracker</div>
+      <button id="skin-toggle" type="button" onclick="toggleSkin()" title="Toggle skin">🎨 Iron Maiden</button>
       <div class="vname">Saint<br>Emilion</div>
       <div class="vmeta">MMSI 367399980 · Hudson River / NY Harbor</div>
       <div id="last-pos">
@@ -282,9 +443,17 @@ body{font-family:Inter,sans-serif;background:var(--bg);color:var(--text);overflo
 <script>
 // ── Map ──────────────────────────────────────────────────────────────
 const map = L.map('map', {zoomControl:true}).setView([40.85,-74.00], 10);
-L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',{
+const lightTiles = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',{
   attribution:'© OpenStreetMap © Carto', subdomains:'abcd', maxZoom:19
 }).addTo(map);
+const darkTiles = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{
+  attribution:'© OpenStreetMap © Carto', subdomains:'abcd', maxZoom:19
+});
+// Apply saved skin to map tiles on load
+if (localStorage.getItem('skin') === 'dark') {
+  map.removeLayer(lightTiles);
+  map.addLayer(darkTiles);
+}
 
 // ── Known docks ───────────────────────────────────────────────────────
 const DOCKS = [
@@ -1316,6 +1485,31 @@ startPolling(300); // default 5min to avoid quota abuse
 
   document.addEventListener('touchend', () => { dragging = false; });
 })();
+
+// ── Skin toggle ──────────────────────────────────────────────────────────────
+function toggleSkin() {
+  const isDark = document.body.classList.toggle('dark-skin');
+  localStorage.setItem('skin', isDark ? 'dark' : 'light');
+  const btn = document.getElementById('skin-toggle');
+  btn.textContent = isDark ? '☀️ Light Skin' : '🎨 Iron Maiden';
+  // Switch Leaflet tile layer
+  if (isDark && darkTiles && !map.hasLayer(darkTiles)) {
+    map.removeLayer(lightTiles);
+    map.addLayer(darkTiles);
+  } else if (!isDark && lightTiles && !map.hasLayer(lightTiles)) {
+    map.removeLayer(darkTiles);
+    map.addLayer(lightTiles);
+  }
+}
+// Restore saved skin on load
+(function() {
+  if (localStorage.getItem('skin') === 'dark') {
+    document.body.classList.add('dark-skin');
+    const btn = document.getElementById('skin-toggle');
+    if (btn) btn.textContent = '☀️ Light Skin';
+  }
+})();
+
 </script>
 </body>
 </html>
