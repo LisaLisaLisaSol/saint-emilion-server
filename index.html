@@ -300,9 +300,9 @@ function placeSaint(lat, lng, cog, sog, nav){
   document.getElementById('v-nav').textContent = nav||'—';
   document.getElementById('v-fix').textContent = new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'});
 
-  // Store fix for dead reckoning
-  lastFix = {lat, lng, sog:sog||0, cog:cog||0, ts:Date.now()};
-  startDeadReckoning();
+  // Store fix for dead reckoning — timestamp set to NOW
+  const fixTime = Date.now();
+  lastFix = {lat, lng, sog:sog||0, cog:cog||0, ts:fixTime};
 
   // Banner
   document.getElementById('banner-sub').textContent = `${lat.toFixed(4)}°N  ${Math.abs(lng).toFixed(4)}°W`;
@@ -319,17 +319,23 @@ function placeSaint(lat, lng, cog, sog, nav){
       <span style="color:#888">Status</span><b>${nav||'—'}</b>
       <span style="color:#888">Position</span><b>${lat.toFixed(4)}°N</b>
     </div>
-    <div style="font-size:10px;color:#00b7d9;margin-top:5px">Updated ${new Date().toLocaleTimeString()}</div>
+    <div style="font-size:10px;color:#00b7d9;margin-top:5px">AIS fix at ${new Date().toLocaleTimeString()}</div>
   </div>`);
+
+  // Start dead reckoning from this fix
+  startDeadReckoning();
 }
 
 // ── AI Fetch ──────────────────────────────────────────────────────────
 // ── Dead Reckoning ────────────────────────────────────────────────────
 // Projects estimated position forward from last AIS fix using speed + course
 function deadReckon() {
-  if (!lastFix.lat || !lastFix.sog) return;
+  if (!lastFix.lat) return;
+  const sog = lastFix.sog > 0.5 ? lastFix.sog : 7.0; // use 7kn default if stale speed
   const elapsed = (Date.now() - lastFix.ts) / 3600000; // hours
-  const distNm = lastFix.sog * elapsed;
+  console.log('DR: elapsed', (elapsed*60).toFixed(1), 'min, sog', sog, 'cog', lastFix.cog);
+  if (elapsed < 0.01) return; // less than 36 seconds, skip
+  const distNm = sog * elapsed;
   // Convert course to radians (0=N, 90=E, 180=S, 270=W)
   const cogRad = (lastFix.cog * Math.PI) / 180;
   const dLat = (distNm / 60) * Math.cos(cogRad);
