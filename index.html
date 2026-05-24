@@ -72,6 +72,13 @@ body{font-family:Inter,sans-serif;background:var(--bg);color:var(--text);overflo
 /* Log */
 #log-wrap{font-size:11px;color:var(--muted);max-height:130px;overflow-y:auto;line-height:1.6}
 #log-wrap div{padding:3px 0;border-bottom:1px solid var(--border)}
+.interval-btn{padding:4px 8px;border:1px solid var(--border);border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;background:#f8fbfd;font-family:Inter,sans-serif;color:var(--muted);transition:all .15s}
+.interval-btn.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+.interval-btn:hover{border-color:var(--accent);color:var(--accent)}
+.interval-btn{padding:4px 8px;border:1px solid var(--border);border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;background:#f8fbfd;font-family:Inter,sans-serif;color:var(--muted);transition:all .15s}
+.interval-btn.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+.interval-btn:hover{border-color:var(--accent);color:var(--accent)}
+.interval-btn.active:hover{opacity:.85;color:#fff}
 
 /* ── Map ── */
 #map-wrap{position:relative}
@@ -110,8 +117,17 @@ body{font-family:Inter,sans-serif;background:var(--bg);color:var(--text);overflo
     </div>
 
     <div id="fetch-wrap">
-      <button id="btn-fetch" type="button">🔍 Fetch Live Position</button>
-      <div id="fetch-status">Tap to search for Saint Emilion's current location</div>
+      <button id="btn-fetch" type="button">🔍 Fetch Now</button>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:8px">
+        <span style="font-size:11px;color:var(--muted)">Auto-update:</span>
+        <div id="auto-toggle" style="display:flex;gap:4px">
+          <button type="button" class="interval-btn active" data-seconds="30">30s</button>
+          <button type="button" class="interval-btn" data-seconds="60">1m</button>
+          <button type="button" class="interval-btn" data-seconds="300">5m</button>
+          <button type="button" class="interval-btn" data-seconds="0">Off</button>
+        </div>
+      </div>
+      <div id="fetch-status">Starting auto-update…</div>
     </div>
 
     <div id="ai-result">
@@ -287,6 +303,11 @@ function placeSaint(lat, lng, cog, sog, nav){
 }
 
 // ── AI Fetch ──────────────────────────────────────────────────────────
+function placeSaintAndRecord(lat,lng,cog,sog,nav){
+  placeSaint(lat,lng,cog,sog,nav);
+  recordPosition(lat,lng,sog,nav);
+}
+
 async function fetchLivePosition(){
   const btn=document.getElementById('btn-fetch');
   const status=document.getElementById('fetch-status');
@@ -337,7 +358,7 @@ async function fetchLivePosition(){
 
     if(parsed && parsed.lat && parsed.lng && !parsed.error){
       // Got coordinates — place on map
-      placeSaint(parsed.lat, parsed.lng, parsed.cog||0, parsed.sog||0, parsed.nav||'Unknown');
+      placeSaintAndRecord(parsed.lat, parsed.lng, parsed.cog||0, parsed.sog||0, parsed.nav||'Unknown');
 
       // Update last pos card
       document.getElementById('lp-loc').textContent = parsed.location || `${parsed.lat.toFixed(4)}°N ${Math.abs(parsed.lng).toFixed(4)}°W`;
@@ -468,9 +489,60 @@ const toggleBtn=document.getElementById('toggle-sidebar');
 const sidebar=document.getElementById('sidebar');
 toggleBtn.onclick=()=>sidebar.classList.toggle('open');
 
+// ── Voyage recording ──────────────────────────────────────────────────
+let voyageTrack=[], voyageStartTime=null, lastMoving=false;
+function recordPosition(lat,lng,sog,nav){
+  const moving=sog>0.5;
+  if(moving){
+    if(!voyageStartTime){voyageStartTime=Date.now();voyageTrack=[];log('New voyage — recording track');}
+    voyageTrack.push([lat,lng]);
+  } else if(!moving&&lastMoving&&voyageTrack.length>5){
+    saveVoyage();
+  }
+  lastMoving=moving;
+}
+function saveVoyage(){
+  if(voyageTrack.length<3){voyageTrack=[];voyageStartTime=null;return;}
+  const saved=JSON.parse(localStorage.getItem('saved_voyages')||'[]');
+  saved.unshift({name:'Live Voyage',date:new Date(voyageStartTime).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}),color:'#00b7d9',track:[...voyageTrack],live:true});
+  localStorage.setItem('saved_voyages',JSON.stringify(saved.slice(0,3)));
+  log('Voyage saved: '+voyageTrack.length+' points');
+  voyageTrack=[];voyageStartTime=null;renderRoutes();
+}
+
+// ── Auto-polling ───────────────────────────────────────────────────────
+let pollTimer=null;
+function startPolling(seconds){
+  if(pollTimer){clearInterval(pollTimer);pollTimer=null;}
+  document.querySelectorAll('.interval-btn').forEach(b=>b.classList.toggle('active',parseInt(b.dataset.seconds)===seconds));
+  if(seconds===0){document.getElementById('fetch-status').textContent='Auto-update off';return;}
+  fetchLivePosition();
+  pollTimer=setInterval(fetchLivePosition,seconds*1000);
+  document.getElementById('fetch-status').textContent='Auto-updating every '+(seconds>=60?(seconds/60)+'m':seconds+'s');
+}
+
+// ── Rebuild renderRoutes to include live saved voyages ─────────────────
+function renderRoutes(){
+  const wrap=document.getElementById('route-list');wrap.innerHTML='';
+  const saved=JSON.parse(localStorage.getItem('saved_voyages')||'[]');
+  const colors=['#00b7d9','#22d97a','#f5a623'];
+  saved.forEach((v,i)=>{v.color=colors[i%colors.length];});
+  [...saved,...ROUTES].forEach(r=>{
+    const div=document.createElement('div');div.className='route';
+    const liveTag=r.live?'<span style="font-size:9px;background:rgba(0,183,217,.15);color:#00b7d9;padding:1px 5px;border-radius:4px;margin-left:4px">LIVE</span>':'';
+    div.innerHTML='<div class="route-name"><span class="route-dot" style="background:'+r.color+'"></span>'+r.name+liveTag+'</div><div class="route-meta">'+r.date+'</div><div class="route-btns"><button class="rbtn" type="button">&#9654; Replay</button><button class="rbtn" type="button">&#128065; Show</button></div>';
+    const btns=div.querySelectorAll('.rbtn');
+    btns[0].onclick=()=>replayRoute(r,btns[0]);
+    btns[1].onclick=()=>showRoute(r);
+    wrap.appendChild(div);
+  });
+}
+
 // ── Boot ──────────────────────────────────────────────────────────────
 renderRoutes();
-log('Ready — tap Fetch Live Position to locate Saint Emilion');
+log('Starting live tracker…');
+document.querySelectorAll('.interval-btn').forEach(btn=>btn.addEventListener('click',()=>startPolling(parseInt(btn.dataset.seconds))));
+startPolling(30);
 </script>
 </body>
 </html>
