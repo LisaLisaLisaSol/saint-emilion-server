@@ -300,11 +300,27 @@ async function fetchLivePosition(){
   try{
     // Call our Render proxy which forwards to Anthropic securely
     const PROXY = 'https://saint-emilion-server.onrender.com/fetch';
-    const res = await fetch(PROXY, {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({})
-    });
+    status.textContent = 'Contacting server… (may take 15–20s)';
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 30000); // 30s timeout
+    let res;
+    try {
+      res = await fetch(PROXY, {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({}),
+        signal: controller.signal
+      });
+      clearTimeout(timeout);
+    } catch(fetchErr) {
+      clearTimeout(timeout);
+      if(fetchErr.name === 'AbortError') throw new Error('Request timed out after 30s — try again');
+      throw fetchErr;
+    }
+    if(!res.ok) {
+      const errText = await res.text();
+      throw new Error(`Server error ${res.status}: ${errText.slice(0,100)}`);
+    }
 
     const data = await res.json();
     const textBlock = data.content?.find(b=>b.type==='text');
@@ -342,7 +358,7 @@ async function fetchLivePosition(){
     }
 
   } catch(e){
-    status.textContent = 'Search failed — try again';
+    status.textContent = '⚠️ ' + e.message;
     log('Fetch error: ' + e.message);
   } finally {
     btn.disabled=false;
