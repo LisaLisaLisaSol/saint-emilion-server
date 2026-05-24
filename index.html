@@ -132,9 +132,9 @@ body{font-family:Inter,sans-serif;background:var(--bg);color:var(--text);overflo
       <div style="display:flex;align-items:center;gap:8px;margin-top:8px">
         <span style="font-size:11px;color:var(--muted)">Auto-update:</span>
         <div id="auto-toggle" style="display:flex;gap:4px">
-          <button type="button" class="interval-btn active" data-seconds="30">30s</button>
+          <button type="button" class="interval-btn" data-seconds="30">30s</button>
           <button type="button" class="interval-btn" data-seconds="60">1m</button>
-          <button type="button" class="interval-btn" data-seconds="300">5m</button>
+          <button type="button" class="interval-btn active" data-seconds="300">5m</button>
           <button type="button" class="interval-btn" data-seconds="0">Off</button>
         </div>
       </div>
@@ -670,6 +670,15 @@ async function fetchLivePosition(){
     }
     if(!res.ok) {
       const errText = await res.text();
+      // If quota hit, stop polling immediately
+      if(res.status === 403 || res.status === 429) {
+        if(pollTimer){ clearInterval(pollTimer); pollTimer=null; }
+        document.querySelectorAll('.interval-btn').forEach(b=>b.classList.remove('active'));
+        document.querySelector('.interval-btn[data-seconds="0"]').classList.add('active');
+        log('⚠️ API quota reached — auto-polling stopped');
+        document.getElementById('fetch-status').textContent = '⚠️ Quota reached — polling stopped. Try again in a few hours.';
+        document.getElementById('fetch-status').style.color = 'var(--danger)';
+      }
       throw new Error(`Server error ${res.status}: ${errText.slice(0,100)}`);
     }
 
@@ -1194,7 +1203,7 @@ const todayStr = new Date().toISOString().split('T')[0];
 document.getElementById('date-start').value = todayStr;
 
 document.querySelectorAll('.interval-btn').forEach(btn=>btn.addEventListener('click',()=>startPolling(parseInt(btn.dataset.seconds))));
-startPolling(30);
+startPolling(300); // default 5min to avoid quota abuse
 </script>
 </body>
 </html>
