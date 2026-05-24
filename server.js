@@ -66,13 +66,14 @@ const httpServer = http.createServer(async (req, res) => {
 
       if (r.status === 200) {
         const d = JSON.parse(r.body);
-        // VesselAPI response structure
-        const lat = d.latitude || d.lat;
-        const lng = d.longitude || d.lng || d.lon;
-        const sog = d.speed || d.sog || 0;
-        const cog = d.course || d.cog || 0;
-        const nav = NAV[d.navigationalStatus || d.navStatus || d.nav_status] || d.status || 'Unknown';
-        const ts  = d.timestamp || d.updated || new Date().toISOString();
+        // VesselAPI wraps response in vesselPosition
+        const v = d.vesselPosition || d;
+        const lat = v.latitude || v.lat;
+        const lng = v.longitude || v.lng || v.lon;
+        const sog = v.sog || v.speed || v.speedOverGround || 0;
+        const cog = v.cog || v.course || v.courseOverGround || 0;
+        const nav = NAV[v.navigationalStatus || v.navStatus || v.nav_status] || v.status || 'Underway';
+        const ts  = v.timestamp || v.updated || new Date().toISOString();
 
         if (lat && lng) {
           const result = {
