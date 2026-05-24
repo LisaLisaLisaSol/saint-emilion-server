@@ -134,24 +134,37 @@ body{font-family:Inter,sans-serif;background:var(--bg);color:var(--text);overflo
     <div id="manual-wrap" style="padding:14px 20px;border-bottom:1px solid var(--border)">
       <div style="font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);margin-bottom:10px">📍 Manual Position</div>
 
-      <div style="margin-bottom:8px">
+      <style>
+        .ac-wrap{position:relative;margin-bottom:8px}
+        .ac-inp{width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px;font-family:Inter,sans-serif;color:var(--text);background:#f8fbfd;outline:none;box-sizing:border-box}
+        .ac-inp:focus{border-color:var(--accent)}
+        .ac-list{position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid var(--border);border-top:none;border-radius:0 0 8px 8px;z-index:9999;max-height:160px;overflow-y:auto;display:none;box-shadow:0 4px 12px rgba(0,0,0,.1)}
+        .ac-list.show{display:block}
+        .ac-item{padding:7px 10px;font-size:12px;cursor:pointer;border-bottom:1px solid var(--border);color:var(--text)}
+        .ac-item:last-child{border-bottom:none}
+        .ac-item:hover{background:#f0f8ff;color:var(--accent)}
+        .ac-item small{color:var(--muted);font-size:10px;display:block}
+      </style>
+
+      <div>
         <label style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;display:block;margin-bottom:4px">Started at</label>
-        <div style="display:flex;gap:6px">
-          <select id="sel-start" style="flex:1;padding:7px 8px;border:1px solid var(--border);border-radius:8px;font-size:12px;font-family:Inter,sans-serif;color:var(--text);background:#f8fbfd">
-            <option value="">— Select dock —</option>
-          </select>
-          <input type="time" id="time-start" style="width:90px;padding:7px 8px;border:1px solid var(--border);border-radius:8px;font-size:12px;font-family:Inter,sans-serif;color:var(--text);background:#f8fbfd">
+        <div style="display:flex;gap:6px;align-items:flex-start">
+          <div class="ac-wrap" style="flex:1;margin-bottom:0">
+            <input class="ac-inp" id="inp-start" placeholder="Type dock, port, or location…" autocomplete="off">
+            <div class="ac-list" id="list-start"></div>
+          </div>
+          <input type="time" id="time-start" style="width:88px;padding:8px 6px;border:1px solid var(--border);border-radius:8px;font-size:12px;font-family:Inter,sans-serif;color:var(--text);background:#f8fbfd;flex-shrink:0">
         </div>
+        <div id="start-coord" style="font-size:10px;color:var(--live);margin-top:3px;min-height:13px"></div>
       </div>
 
       <div style="margin-bottom:10px">
-        <label style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;display:block;margin-bottom:4px">Currently at (optional)</label>
-        <div style="display:flex;gap:6px">
-          <select id="sel-current" style="flex:1;padding:7px 8px;border:1px solid var(--border);border-radius:8px;font-size:12px;font-family:Inter,sans-serif;color:var(--text);background:#f8fbfd">
-            <option value="">— Select or skip —</option>
-          </select>
+        <label style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;display:block;margin-bottom:4px">Currently at <span style="font-weight:400;text-transform:none">(optional)</span></label>
+        <div class="ac-wrap">
+          <input class="ac-inp" id="inp-current" placeholder="Type location, e.g. New Hamburg…" autocomplete="off">
+          <div class="ac-list" id="list-current"></div>
         </div>
-        <input id="txt-custom" placeholder="Or type any location (e.g. New Hamburg)" style="width:100%;margin-top:5px;padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px;font-family:Inter,sans-serif;color:var(--text);background:#f8fbfd">
+        <div id="current-coord" style="font-size:10px;color:var(--live);margin-top:3px;min-height:13px"></div>
       </div>
 
       <button type="button" id="btn-manual-apply" style="width:100%;padding:9px;background:rgba(0,183,217,.12);border:1.5px solid rgba(0,183,217,.35);border-radius:9px;color:var(--accent);font-weight:700;font-size:12px;cursor:pointer;font-family:Inter,sans-serif">
@@ -819,12 +832,94 @@ function renderRoutes(){
   });
 }
 
-// ── Manual position calibration ───────────────────────────────────────
-function populateDockSelects() {
-  const dockOpts = DOCKS.map(d => `<option value="${d.lat},${d.lng}">${d.name}</option>`).join('');
-  document.getElementById('sel-start').innerHTML = '<option value="">— Select dock —</option>' + dockOpts;
-  document.getElementById('sel-current').innerHTML = '<option value="">— Select or skip —</option>' + dockOpts;
+// ── Manual position autocomplete ──────────────────────────────────────
+let startCoords = null, currentCoords = null;
+
+// Debounce helper
+function debounce(fn, ms) {
+  let t; return (...args) => { clearTimeout(t); t = setTimeout(()=>fn(...args), ms); };
 }
+
+// Search Nominatim — biased to Hudson Valley waterway
+async function searchLocations(query) {
+  if (query.length < 2) return [];
+  try {
+    // Search with Hudson River / NY bias
+    const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=6&countrycodes=us&viewbox=-74.5,42.8,-73.5,40.4&bounded=0`;
+    const r = await fetch(url, {headers:{'Accept-Language':'en'}});
+    const d = await r.json();
+    return d.map(item => ({
+      name: item.display_name.split(',').slice(0,2).join(', '),
+      full: item.display_name,
+      lat: parseFloat(item.lat),
+      lng: parseFloat(item.lon),
+      type: item.type
+    }));
+  } catch(_) { return []; }
+}
+
+function setupAutocomplete(inputId, listId, coordId, onSelect) {
+  const inp = document.getElementById(inputId);
+  const list = document.getElementById(listId);
+  const coordEl = document.getElementById(coordId);
+
+  // Pre-populate with known docks when focused
+  inp.addEventListener('focus', () => {
+    if (!inp.value.trim()) showDocks(list, coordEl, onSelect);
+  });
+
+  const search = debounce(async (val) => {
+    if (!val.trim()) { showDocks(list, coordEl, onSelect); return; }
+    list.innerHTML = '<div class="ac-item" style="color:var(--muted)">Searching…</div>';
+    list.classList.add('show');
+    const results = await searchLocations(val);
+    if (!results.length) {
+      list.innerHTML = '<div class="ac-item" style="color:var(--muted)">No results found</div>';
+      return;
+    }
+    list.innerHTML = results.map((r,i) =>
+      `<div class="ac-item" data-i="${i}"><b>${r.name.split(',')[0]}</b><small>${r.name.split(',').slice(1).join(',').trim()}</small></div>`
+    ).join('');
+    list.querySelectorAll('.ac-item').forEach((el, i) => {
+      el.addEventListener('click', () => {
+        inp.value = results[i].name.split(',')[0];
+        coordEl.textContent = `${results[i].lat.toFixed(4)}°N ${Math.abs(results[i].lng).toFixed(4)}°W`;
+        onSelect(results[i]);
+        list.classList.remove('show');
+      });
+    });
+  }, 300);
+
+  inp.addEventListener('input', () => search(inp.value));
+
+  // Close on outside click
+  document.addEventListener('click', e => {
+    if (!inp.contains(e.target) && !list.contains(e.target)) list.classList.remove('show');
+  });
+}
+
+function showDocks(list, coordEl, onSelect) {
+  list.innerHTML = DOCKS.map((d,i) =>
+    `<div class="ac-item" data-i="${i}">⚓ ${d.name}</div>`
+  ).join('');
+  list.classList.add('show');
+  list.querySelectorAll('.ac-item').forEach((el, i) => {
+    el.addEventListener('click', () => {
+      const inp = el.closest('.ac-wrap').querySelector('.ac-inp');
+      inp.value = DOCKS[i].name;
+      coordEl.textContent = `${DOCKS[i].lat.toFixed(4)}°N ${Math.abs(DOCKS[i].lng).toFixed(4)}°W`;
+      onSelect({lat: DOCKS[i].lat, lng: DOCKS[i].lng, name: DOCKS[i].name});
+      list.classList.remove('show');
+    });
+  });
+}
+
+setupAutocomplete('inp-start', 'list-start', 'start-coord', (loc) => {
+  startCoords = loc;
+});
+setupAutocomplete('inp-current', 'list-current', 'current-coord', (loc) => {
+  currentCoords = loc;
+});
 
 // Geocode a text location using Nominatim
 async function geocodeLocation(text) {
@@ -839,17 +934,14 @@ async function geocodeLocation(text) {
 document.getElementById('btn-manual-apply').addEventListener('click', async () => {
   const btn = document.getElementById('btn-manual-apply');
   const result = document.getElementById('manual-result');
-  const startVal = document.getElementById('sel-start').value;
   const timeVal = document.getElementById('time-start').value;
-  const currentVal = document.getElementById('sel-current').value;
-  const customTxt = document.getElementById('txt-custom').value.trim();
 
-  if (!startVal) { result.textContent = '⚠️ Please select a starting dock'; result.style.color='var(--danger)'; return; }
+  if (!startCoords) { result.textContent = '⚠️ Please type and select a starting location'; result.style.color='var(--danger)'; return; }
   if (!timeVal) { result.textContent = '⚠️ Please enter a departure time'; result.style.color='var(--danger)'; return; }
 
   btn.textContent = '↻ Recalibrating…'; btn.disabled = true;
 
-  const [startLat, startLng] = startVal.split(',').map(Number);
+  const startLat = startCoords.lat, startLng = startCoords.lng;
 
   // Build departure timestamp from today + time input
   const [hh, mm] = timeVal.split(':').map(Number);
@@ -870,7 +962,7 @@ document.getElementById('btn-manual-apply').addEventListener('click', async () =
   voyageStartMarker = L.circleMarker([startLat, startLng], {
     radius:8, color:'#00b7d9', fillColor:'#00b7d9', fillOpacity:.9, weight:2
   }).addTo(map);
-  voyageStartMarker.bindTooltip('Voyage start: ' + document.getElementById('sel-start').options[document.getElementById('sel-start').selectedIndex].text, {permanent:false, direction:'top'});
+  voyageStartMarker.bindTooltip('Voyage start: ' + startCoords.name || document.getElementById('inp-start').value, {permanent:false, direction:'top'});
 
   // Draw trail from start to last AIS fix
   trail.setLatLngs([[startLat, startLng]]);
@@ -879,18 +971,10 @@ document.getElementById('btn-manual-apply').addEventListener('click', async () =
   let infoText = '';
 
   // If "currently at" is provided, recalculate speed
-  let currentCoords = null;
   let currentName = '';
 
-  if (currentVal) {
-    const [cLat, cLng] = currentVal.split(',').map(Number);
-    currentCoords = {lat: cLat, lng: cLng};
-    currentName = document.getElementById('sel-current').options[document.getElementById('sel-current').selectedIndex].text;
-  } else if (customTxt) {
-    result.textContent = 'Geocoding location…';
-    currentCoords = await geocodeLocation(customTxt);
-    if (currentCoords) currentName = customTxt;
-    else { result.textContent = '⚠️ Could not find that location — try a dock from the list'; result.style.color='var(--danger)'; btn.textContent='↻ Recalibrate'; btn.disabled=false; return; }
+  if (currentCoords) {
+    currentName = currentCoords.name || document.getElementById('inp-current').value;
   }
 
   if (currentCoords) {
@@ -942,7 +1026,7 @@ document.getElementById('btn-manual-apply').addEventListener('click', async () =
     deadReckon();
     log('Recalibrated: ' + infoText);
   } else {
-    infoText = `Departure set: ${depTime.toLocaleTimeString()} from ${document.getElementById('sel-start').options[document.getElementById('sel-start').selectedIndex].text}`;
+    infoText = `Departure set: ${depTime.toLocaleTimeString()} from ${startCoords.name || document.getElementById('inp-start').value}`;
     result.style.color = 'var(--muted)';
   }
 
@@ -956,7 +1040,6 @@ document.getElementById('btn-manual-apply').addEventListener('click', async () =
 });
 
 // ── Boot ──────────────────────────────────────────────────────────────
-populateDockSelects();
 renderRoutes();
 log('Starting live tracker…');
 document.querySelectorAll('.interval-btn').forEach(btn=>btn.addEventListener('click',()=>startPolling(parseInt(btn.dataset.seconds))));
