@@ -137,6 +137,22 @@ const httpServer = http.createServer(async (req, res) => {
 
   try {
     // ── 1. aisstream cache (best — real-time, free) ──────────────────────────
+    // If connected but no cache yet, wait up to 12s for first message
+    if (aisConnected && !aisCache) {
+      console.log('aisstream connected but no data yet — waiting up to 12s…');
+      const waited = await new Promise(resolve => {
+        const deadline = Date.now() + 12000;
+        const check = setInterval(() => {
+          if (aisCache || Date.now() >= deadline) {
+            clearInterval(check);
+            resolve(!!aisCache);
+          }
+        }, 500);
+      });
+      if (waited) console.log('aisstream data arrived during wait');
+      else console.log('aisstream wait timed out — trying fallbacks');
+    }
+
     if (aisCache && (Date.now() - aisCache.ts) < 600000) {  // within 10 min
       console.log('Serving from aisstream cache, age:', Math.round((Date.now()-aisCache.ts)/1000)+'s');
       res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -186,7 +202,7 @@ const httpServer = http.createServer(async (req, res) => {
     }
 
     // ── 3. Anthropic web search fallback ─────────────────────────────────────
-    if (ANTHROPIC_KEY) {
+    if (ANTHROPIC_KEY && false) {  // disabled — aisstream is primary, Anthropic credits not needed
       console.log('Falling back to Anthropic web search…');
       const payload = JSON.stringify({
         model: 'claude-sonnet-4-20250514',
@@ -194,7 +210,7 @@ const httpServer = http.createServer(async (req, res) => {
         tools: [{ type: 'web_search_20250305', name: 'web_search' }],
         messages: [{
           role: 'user',
-          content: `Search for the current position of vessel SAINT EMILION MMSI 367399980 on VesselFinder or MarineTraffic. Return ONLY this JSON: {"lat":0.0,"lng":0.0,"sog":0.0,"cog":0,"nav":"status","location":"description","updated":"time","summary":"one sentence"} or {"error":"not found","summary":"explanation"}`
+          content: `Use web search to find the current AIS position of tugboat SAINT EMILION MMSI 367399980 IMO 8741832 operated by Poling-Cutler Marine on the Hudson River. Try these searches in order: 1) fetch https://www.vesseltracker.com/en/Ships/Saint-Emilion-9353333.html 2) search "MMSI 367399980 position" 3) search "saint emilion poling cutler hudson river". Find actual decimal latitude and longitude coordinates. Return ONLY valid JSON, no markdown: {"lat":40.0000,"lng":-74.0000,"sog":0.0,"cog":0,"nav":"Underway","location":"description","updated":"ISO timestamp","summary":"one sentence","source":"website name"} or {"error":"not found","summary":"what was tried"}`
         }]
       });
       const result = await new Promise((resolve, reject) => {
@@ -221,8 +237,12 @@ const httpServer = http.createServer(async (req, res) => {
       return;
     }
 
-    res.writeHead(500, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'No API keys configured' }));
+    // All sources exhausted — return a clean "waiting" response
+    const waitMsg = aisConnected
+      ? 'Connected to AIS network — waiting for vessel broadcast'
+      : 'Position not available — AIS not connected';
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ content: [{ type: 'text', text: JSON.stringify({ error: 'waiting', summary: waitMsg }) }] }));
 
   } catch(e) {
     console.error('Error:', e.message);
