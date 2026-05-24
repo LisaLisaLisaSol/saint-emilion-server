@@ -3,7 +3,14 @@ const http = require('http');
 
 const PORT = process.env.PORT || 3000;
 const AIS_KEY = process.env.AIS_KEY || '';
-const BOUNDING_BOX = [[39.5, -75.5], [42.5, -71.5]];
+
+// Only Saint Emilion — tiny data volume, won't overwhelm the queue
+const SUBSCRIPTION = {
+  Apikey: AIS_KEY,
+  BoundingBoxes: [[[-90, -180], [90, 180]]], // world box but filtered by MMSI
+  FiltersShipMMSI: ['367399980'],
+  FilterMessageTypes: ['PositionReport', 'ShipStaticData']
+};
 
 const httpServer = http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/plain' });
@@ -22,13 +29,6 @@ function broadcast(obj) {
     if (c.readyState === WebSocket.OPEN) c.send(msg);
 }
 
-// Build subscription as a Buffer so it's ready to send the instant socket opens
-const SUBSCRIPTION = Buffer.from(JSON.stringify({
-  Apikey: AIS_KEY,
-  BoundingBoxes: [BOUNDING_BOX],
-  FilterMessageTypes: ['PositionReport']
-}));
-
 function connectToAIS() {
   if (isConnecting) return;
   if (aisWs && aisWs.readyState === WebSocket.OPEN) return;
@@ -39,22 +39,24 @@ function connectToAIS() {
 
   aisWs = new WebSocket('wss://stream.aisstream.io/v0/stream');
 
-  // Send subscription IMMEDIATELY on open — before any other async work
   aisWs.on('open', () => {
-    // Send synchronously with no delay — must arrive within 3s per aisstream docs
-    aisWs.send(SUBSCRIPTION, (err) => {
+    // Send subscription immediately — must be within 3 seconds
+    const subMsg = JSON.stringify(SUBSCRIPTION);
+    aisWs.send(subMsg, (err) => {
       if (err) {
         console.error('Subscription send failed:', err.message);
       } else {
-        console.log('Subscription sent ✓');
         isConnecting = false;
+        console.log('Subscribed to MMSI 367399980 (Saint Emilion only)');
         broadcast({ type: 'status', status: 'connected' });
       }
     });
   });
 
   aisWs.on('message', (data) => {
-    broadcast({ type: 'ais', data: data.toString() });
+    const text = data.toString();
+    console.log('AIS message received:', text.slice(0, 80));
+    broadcast({ type: 'ais', data: text });
   });
 
   aisWs.on('close', (code) => {
@@ -78,11 +80,11 @@ function connectToAIS() {
 
 wss.on('connection', (client) => {
   browserClients.add(client);
-  console.log(`Client connected (${browserClients.size} total)`);
+  console.log(`Browser client connected (${browserClients.size} total)`);
   const status = aisWs && aisWs.readyState === WebSocket.OPEN ? 'connected' : 'reconnecting';
   client.send(JSON.stringify({ type: 'status', status }));
-  client.on('close', () => { browserClients.delete(client); });
-  client.on('error', () => { browserClients.delete(client); });
+  client.on('close', () => browserClients.delete(client));
+  client.on('error', () => browserClients.delete(client));
 });
 
 httpServer.listen(PORT, () => {
