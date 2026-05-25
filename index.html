@@ -616,22 +616,25 @@ body.dark-skin .drawer-bar { background: rgba(100,30,0,.3); }
 #ferryman {
   position: fixed;
   bottom: 0;
-  left: -2vw;
-  width: 42vw;            /* ~40% of screen width — scales with window */
-  max-width: 520px;       /* cap so it doesn't get huge on wide screens */
-  min-width: 0;           /* no minimum — let it scale freely */
+  left: 0;
+  width: auto;
+  height: 82vh;           /* constrain by height so head never clips */
+  max-height: 680px;
+  min-height: 0;
   z-index: 710;
   pointer-events: none;
   display: none;
   mix-blend-mode: lighten;
   opacity: 0;
   transition: opacity 1.2s ease, bottom .32s cubic-bezier(.32,.72,0,1);
+  object-fit: contain;
+  object-position: bottom left;
 }
 #ferryman.visible {
   opacity: .95;
 }
 /* Drawer states push ferryman up */
-#ferryman.drawer-half { bottom: 360px; }
+#ferryman.drawer-half { bottom: 360px; height: 72vh; }
 #ferryman.drawer-full { bottom: 100vh; opacity: 0; }
 body.dark-skin #ferryman { display: block; }
 
