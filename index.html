@@ -5,407 +5,694 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Saint Emilion · Tracker</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Bebas+Neue&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:ital,wght@0,400;0,500&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
-*{margin:0;padding:0;box-sizing:border-box}
-:root{
-  --bg:#f4f6f8;
-  --card:#fff;
-  --border:#e2e8ed;
-  --text:#12202b;
-  --muted:#8a9baa;
-  --accent:#0095b0;
-  --live:#16a050;
-  --warn:#f5a623;
-  --danger:#e05;
-  --label:#8a9baa;
-  --faint:#f2f5f7;
-  --rule:#e8ecef;
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --accent:  #0095b0;
+  --live:    #16a050;
+  --warn:    #f5a623;
+  --danger:  #e05;
+  --text:    #0e1a22;
+  --muted:   #7a909f;
+  --rule:    rgba(0,0,0,.07);
+  --glass:   rgba(255,255,255,.88);
+  --gb:      rgba(255,255,255,.55);
+  --shadow:  0 8px 32px rgba(0,0,0,.13), 0 2px 8px rgba(0,0,0,.07);
+  --border:  rgba(255,255,255,.6);
 }
-body{font-family:Inter,sans-serif;background:var(--bg);color:var(--text);overflow:hidden}
-#app{display:grid;grid-template-columns:268px 3px 1fr;height:100vh}
-#divider{background:var(--rule);cursor:col-resize;transition:background .15s;position:relative;z-index:100;width:3px}
-#divider:hover,#divider.dragging{background:var(--accent)}
 
-/* ── Sidebar shell ── */
-#sidebar{background:#fff;border-right:1px solid var(--rule);display:flex;flex-direction:column;overflow:hidden}
-
-/* ── Header ── */
-#hdr{padding:18px 18px 14px;border-bottom:1px solid var(--rule);position:relative;flex-shrink:0}
-.eyebrow{font-size:9px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);margin-bottom:5px;opacity:.7}
-.vname{font-family:"Bebas Neue",sans-serif;font-size:38px;line-height:.95;color:var(--text);letter-spacing:.02em;margin-bottom:5px}
-.vmeta{font-size:10px;color:var(--muted);letter-spacing:.01em}
-
-/* last-pos — now flat, no card */
-#last-pos{margin-top:10px;padding-top:10px;border-top:1px solid var(--rule);font-size:10px;color:var(--muted);line-height:1.6;display:none}
-#last-pos.on{display:block}
-#last-pos strong{color:var(--text);font-weight:600}
-.live-dot{display:inline-flex;align-items:center;gap:5px;font-size:10px;color:var(--live);font-weight:600;margin-top:3px}
-.live-dot::before{content:'';display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--live);animation:pulse 1.8s infinite}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
-
-/* skin toggle */
-#skin-toggle{position:absolute;top:16px;right:14px;background:none;border:none;font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);cursor:pointer;padding:0;font-family:Inter,sans-serif;opacity:.55;transition:opacity .15s}
-#skin-toggle:hover{opacity:1}
-
-/* ── Fetch strip ── */
-#fetch-wrap{padding:11px 18px;border-bottom:1px solid var(--rule);flex-shrink:0}
-#btn-fetch{width:100%;padding:9px 0;background:var(--accent);color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;transition:all .15s;font-family:Inter,sans-serif}
-#btn-fetch:hover{filter:brightness(1.08)}
-#btn-fetch:disabled{opacity:.5;cursor:wait}
-.interval-row{display:flex;align-items:center;gap:10px;margin-top:8px}
-.interval-label{font-size:9px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);flex-shrink:0}
-#auto-toggle{display:flex;gap:3px}
-.interval-btn{padding:3px 9px;border-radius:4px;font-size:10px;font-weight:600;background:var(--faint);border:none;color:var(--muted);cursor:pointer;font-family:Inter,sans-serif;transition:all .12s}
-.interval-btn.active{background:var(--accent);color:#fff}
-.interval-btn:hover:not(.active){color:var(--accent)}
-#fetch-status{margin-top:6px;font-size:10px;color:var(--muted);min-height:14px}
-
-/* ── Scrollable body ── */
-#sidebar-body{flex:1;overflow-y:auto;overflow-x:hidden}
-#sidebar-body::-webkit-scrollbar{width:3px}
-#sidebar-body::-webkit-scrollbar-thumb{background:var(--rule)}
-
-/* ── Sections ── */
-.sec-wrap{border-bottom:1px solid var(--rule)}
-.sec-header{display:flex;justify-content:space-between;align-items:center;padding:11px 18px;cursor:pointer;user-select:none}
-.sec-header:hover{background:rgba(0,0,0,.015)}
-.sec-title{font-size:9px;font-weight:700;letter-spacing:.15em;text-transform:uppercase;color:var(--muted)}
-.sec-arrow{font-size:8px;color:var(--muted);opacity:.5;transition:transform .18s}
-.sec-header.collapsed .sec-arrow{transform:rotate(-90deg)}
-.sec-body{padding:0 18px 14px}
-.sec-body.hidden{display:none}
-
-/* ── KV grid (replaces stat cards) ── */
-.kv-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px 8px}
-.kv-label{font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--label);margin-bottom:2px}
-.kv-val{font-size:20px;font-weight:700;color:var(--text);line-height:1;font-variant-numeric:tabular-nums}
-.kv-val.spd{color:var(--accent)}
-.kv-val.sm{font-size:13px;font-weight:600}
-.kv-val.live-val{color:var(--live);font-size:13px;font-weight:600}
-.kv-sub{font-size:9px;color:var(--muted);margin-top:2px}
-.kv.full{grid-column:span 2}
-
-/* ── Manual position fields ── */
-.field{margin-bottom:10px}
-.field-label{font-size:9px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--label);margin-bottom:4px}
-.field-label span{font-weight:400;text-transform:none;letter-spacing:0;font-size:9px;color:var(--muted)}
-
-/* autocomplete inputs */
-.ac-wrap{position:relative;margin-bottom:0}
-.ac-inp{width:100%;padding:7px 10px;background:var(--faint);border:1px solid transparent;border-radius:5px;font-size:11px;font-family:Inter,sans-serif;color:var(--text);outline:none;transition:border-color .12s}
-.ac-inp:focus{border-color:var(--accent);background:#fff}
-.ac-list{position:absolute;top:calc(100% + 4px);left:0;right:0;background:#fff;border:1px solid var(--border);border-radius:8px;z-index:9999;max-height:160px;overflow-y:auto;display:none;box-shadow:0 8px 24px rgba(0,0,0,.1);animation:fadeIn .12s ease}
-.ac-list.show{display:block}
-.ac-item{padding:7px 10px;font-size:11px;cursor:pointer;border-bottom:1px solid var(--rule);color:var(--text)}
-.ac-item:last-child{border-bottom:none}
-.ac-item:hover{background:var(--faint);color:var(--accent)}
-.ac-item small{color:var(--muted);font-size:9px;display:block}
-
-.field-row{display:flex;gap:5px;align-items:flex-start}
-.field-date{width:110px;padding:7px 8px;background:var(--faint);border:1px solid transparent;border-radius:5px;font-size:11px;font-family:Inter,sans-serif;color:var(--text);outline:none}
-.field-time{width:76px;padding:7px 8px;background:var(--faint);border:1px solid transparent;border-radius:5px;font-size:11px;font-family:Inter,sans-serif;color:var(--text);outline:none}
-.field-fmt{font-size:9px;color:var(--muted);margin-top:3px;text-align:center}
-.field-coord{font-size:9px;color:var(--live);margin-top:3px;font-family:"JetBrains Mono","Courier New",monospace;min-height:12px;font-variant-numeric:tabular-nums}
-
-#btn-manual-apply{margin-top:2px;background:none;border:none;color:var(--accent);font-size:11px;font-weight:600;cursor:pointer;padding:0;font-family:Inter,sans-serif;text-decoration:underline;text-underline-offset:2px;letter-spacing:.01em}
-#btn-manual-apply:hover{color:var(--text)}
-#manual-result{margin-top:8px;font-size:10px;color:var(--muted);min-height:12px;line-height:1.5}
-
-/* ── AIS text ── */
-#ai-text{font-size:11px;line-height:1.75;color:var(--text)}
-
-/* ── Voyage rows ── */
-.route{padding:8px 0;border-bottom:1px solid var(--rule);display:flex;justify-content:space-between;align-items:flex-start}
-.route:last-child{border-bottom:none}
-.route-left{}
-.route-name{font-size:12px;font-weight:600;color:var(--text);margin-bottom:2px;display:flex;align-items:center;gap:6px}
-.route-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
-.route-meta{font-size:10px;color:var(--muted)}
-.route-btns{display:flex;gap:10px;flex-shrink:0;align-items:center;padding-top:2px}
-.rbtn{font-size:10px;font-weight:600;color:var(--accent);background:none;border:none;cursor:pointer;padding:0;font-family:Inter,sans-serif;opacity:.8;transition:opacity .12s}
-.rbtn:hover{opacity:1}
-.rbtn.playing{color:var(--live)}
-
-/* ── Activity log ── */
-#log-wrap{font-size:10px;color:var(--muted);max-height:120px;overflow-y:auto;line-height:1.5}
-#log-wrap div{padding:3px 0;border-bottom:1px solid var(--rule)}
-#log-wrap div:last-child{border-bottom:none}
-
-/* ── Map ── */
-#map-wrap{position:relative}
-#map{width:100%;height:100vh}
-#map-banner{position:absolute;top:12px;left:12px;z-index:999;background:rgba(255,255,255,.95);border:1px solid var(--border);border-radius:10px;padding:8px 14px;backdrop-filter:blur(8px);min-width:160px;max-width:220px;pointer-events:none;box-shadow:0 2px 12px rgba(0,0,0,.08)}
-.banner-name{font-size:12px;font-weight:700;margin-bottom:1px}
-.banner-sub{font-size:10px;color:var(--muted)}
-.banner-live{font-size:10px;font-weight:700;color:var(--live);margin-top:4px;display:none}
-.banner-live.on{display:flex;align-items:center;gap:4px}
-#map-btns{position:absolute;top:12px;right:12px;z-index:1000;display:flex;flex-direction:column;gap:5px}
-.mbtn{background:rgba(255,255,255,.96);border:1px solid var(--border);border-radius:8px;padding:6px 12px;font-size:11px;font-weight:600;cursor:pointer;backdrop-filter:blur(6px);font-family:Inter,sans-serif;transition:all .15s;box-shadow:0 1px 6px rgba(0,0,0,.08)}
-.mbtn:hover{border-color:var(--accent);color:var(--accent)}
-.mbtn.active{background:var(--accent);color:#fff;border-color:var(--accent)}
-
-@media(max-width:900px){
-  #app{grid-template-columns:1fr}
-  #sidebar{position:absolute;z-index:2000;width:300px;height:100%;transform:translateX(-100%);transition:transform .25s}
-  #sidebar.open{transform:translateX(0)}
-  #toggle-sidebar{display:flex}
+body {
+  font-family: 'DM Sans', sans-serif;
+  background: #000;
+  overflow: hidden;
+  height: 100vh;
+  color: var(--text);
 }
-#toggle-sidebar{display:none;position:absolute;top:12px;left:12px;z-index:3000;background:#fff;border:1px solid var(--border);border-radius:9px;padding:8px 12px;font-size:18px;cursor:pointer}
 
-@keyframes spin{to{transform:rotate(360deg)}}
-@keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+/* ── FULL-BLEED MAP ── */
+#map-wrap { position: fixed; inset: 0; z-index: 0; }
+#map { width: 100%; height: 100%; }
 
-/* ══════════════════════════════════════════
+/* ── FETCH DROPDOWN ── */
+#fetch-wrap {
+  position: fixed;
+  top: 20px; left: 20px;
+  z-index: 900;
+}
+
+#fetch-trigger {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  background: var(--glass);
+  border: 1px solid var(--border);
+  backdrop-filter: blur(16px);
+  border-radius: 8px;
+  padding: 7px 12px;
+  cursor: pointer;
+  box-shadow: var(--shadow);
+  user-select: none;
+  transition: box-shadow .15s;
+}
+#fetch-trigger:hover { box-shadow: 0 10px 36px rgba(0,0,0,.18); }
+
+.ft-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+  animation: pulse 2s infinite;
+}
+.ft-dot.live { background: var(--live); }
+.ft-dot.waiting { background: var(--muted); animation: none; }
+
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.25} }
+
+.ft-label {
+  font-size: 10px; font-weight: 700;
+  letter-spacing: .1em; text-transform: uppercase;
+  color: var(--text); font-family: 'DM Sans', sans-serif;
+}
+.ft-auto {
+  font-size: 9px; color: var(--muted);
+  font-family: 'DM Mono', monospace;
+}
+.ft-chevron {
+  font-size: 8px; color: var(--muted);
+  margin-left: 2px; transition: transform .2s;
+}
+#fetch-wrap.open .ft-chevron { transform: rotate(180deg); }
+
+#fetch-dropdown {
+  position: absolute;
+  top: calc(100% + 6px); left: 0;
+  background: var(--glass);
+  border: 1px solid var(--border);
+  backdrop-filter: blur(20px);
+  border-radius: 10px;
+  padding: 11px 13px;
+  box-shadow: var(--shadow);
+  min-width: 190px;
+  opacity: 0; transform: translateY(-6px);
+  pointer-events: none;
+  transition: opacity .18s, transform .18s;
+}
+#fetch-wrap.open #fetch-dropdown {
+  opacity: 1; transform: translateY(0);
+  pointer-events: all;
+}
+
+#btn-fetch {
+  width: 100%; padding: 8px 0;
+  background: var(--accent); color: #fff;
+  border: none; border-radius: 6px;
+  font-size: 10px; font-weight: 700;
+  letter-spacing: .1em; text-transform: uppercase;
+  font-family: 'DM Sans', sans-serif;
+  cursor: pointer; margin-bottom: 10px;
+  transition: filter .12s;
+}
+#btn-fetch:hover { filter: brightness(1.1); }
+#btn-fetch:disabled { opacity: .5; cursor: wait; }
+
+.fd-row {
+  display: flex; align-items: center;
+  justify-content: space-between;
+}
+.fd-lbl {
+  font-size: 9px; font-weight: 700;
+  letter-spacing: .12em; text-transform: uppercase;
+  color: var(--muted);
+}
+#auto-toggle { display: flex; gap: 2px; }
+.interval-btn {
+  padding: 3px 8px; border-radius: 4px;
+  font-size: 10px; font-weight: 600;
+  background: rgba(0,0,0,.05); border: none;
+  color: var(--muted); cursor: pointer;
+  font-family: 'DM Mono', monospace;
+  transition: all .1s;
+}
+.interval-btn.active { background: var(--accent); color: #fff; }
+
+#fetch-status {
+  margin-top: 8px; font-size: 9px;
+  color: var(--muted); line-height: 1.4;
+}
+
+/* ── MAP CONTROLS (top-right) ── */
+#map-controls {
+  position: fixed;
+  top: 20px; right: 20px;
+  z-index: 900;
+  display: flex; flex-direction: column; gap: 5px;
+}
+.mbtn {
+  background: var(--glass);
+  border: 1px solid var(--border);
+  backdrop-filter: blur(14px);
+  border-radius: 6px;
+  padding: 6px 13px;
+  font-size: 9px; font-weight: 700;
+  letter-spacing: .1em; text-transform: uppercase;
+  color: var(--muted); cursor: pointer;
+  font-family: 'DM Sans', sans-serif;
+  box-shadow: 0 2px 8px rgba(0,0,0,.08);
+  transition: all .12s; text-align: center;
+  opacity: .75;
+}
+.mbtn.active { color: var(--accent); opacity: 1; border-color: rgba(0,149,176,.25); }
+.mbtn#btn-fs { font-size: 8px; opacity: .45; }
+#skin-toggle {
+  background: var(--glass);
+  border: 1px solid var(--border);
+  backdrop-filter: blur(14px);
+  border-radius: 6px;
+  padding: 6px 13px;
+  font-size: 9px; font-weight: 700;
+  letter-spacing: .1em; text-transform: uppercase;
+  color: var(--muted); cursor: pointer;
+  font-family: 'DM Sans', sans-serif;
+  box-shadow: 0 2px 8px rgba(0,0,0,.08);
+  opacity: .45; transition: opacity .15s;
+}
+#skin-toggle:hover { opacity: .9; }
+
+/* ── VESSEL FLOAT CARD (anchored near marker via JS) ── */
+#vessel-card {
+  position: fixed;
+  z-index: 800;
+  pointer-events: none;
+  display: none;
+}
+#vessel-card.on { display: block; }
+
+.vc-inner {
+  background: var(--glass);
+  border: 1px solid var(--border);
+  backdrop-filter: blur(18px);
+  border-radius: 12px;
+  padding: 10px 15px 11px;
+  box-shadow: var(--shadow);
+  min-width: 175px;
+}
+.vc-name {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 17px; letter-spacing: .05em;
+  color: var(--text); line-height: 1; margin-bottom: 7px;
+}
+.vc-stats {
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  gap: 0 10px;
+}
+.vc-val {
+  font-family: 'DM Mono', monospace;
+  font-size: 14px; font-weight: 500;
+  color: var(--text); line-height: 1;
+}
+.vc-val.spd { color: var(--accent); }
+.vc-lbl {
+  font-size: 8px; font-weight: 700;
+  letter-spacing: .1em; text-transform: uppercase;
+  color: var(--muted); margin-top: 2px;
+}
+.vc-live-row {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 9px; font-weight: 600;
+  letter-spacing: .06em; text-transform: uppercase;
+  color: var(--live);
+  margin-top: 8px; padding-top: 7px;
+  border-top: 1px solid var(--rule);
+}
+.vc-live-row::before {
+  content: ''; width: 5px; height: 5px;
+  border-radius: 50%; background: var(--live);
+  animation: pulse 2s infinite; flex-shrink: 0;
+}
+.vc-live-row.stale { color: var(--muted); }
+.vc-live-row.stale::before { background: var(--muted); animation: none; }
+
+/* ── BOTTOM DRAWER ── */
+#drawer {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  z-index: 850;
+  background: var(--glass);
+  backdrop-filter: blur(22px) saturate(180%);
+  border-top: 1px solid var(--border);
+  border-radius: 18px 18px 0 0;
+  box-shadow: 0 -6px 40px rgba(0,0,0,.12);
+  transform: translateY(calc(100% - 68px));
+  transition: transform .32s cubic-bezier(.32,.72,0,1);
+  max-height: 100vh;
+}
+#drawer.half { transform: translateY(calc(100% - 360px)); }
+#drawer.full { transform: translateY(0); }
+
+#drawer-handle {
+  display: flex; align-items: center;
+  justify-content: space-between;
+  padding: 16px 22px 14px;
+  cursor: pointer; user-select: none;
+  position: relative;
+}
+.drawer-bar {
+  position: absolute; top: 8px; left: 50%;
+  transform: translateX(-50%);
+  width: 34px; height: 4px;
+  border-radius: 2px; background: rgba(0,0,0,.1);
+}
+.dh-left { display: flex; flex-direction: column; gap: 3px; }
+.dh-name {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 24px; letter-spacing: .04em;
+  color: var(--text); line-height: 1;
+}
+.dh-status {
+  font-size: 10px; font-weight: 600;
+  letter-spacing: .06em;
+  color: var(--live);
+  display: flex; align-items: center; gap: 5px;
+}
+.dh-status::before {
+  content: ''; width: 5px; height: 5px;
+  border-radius: 50%; background: var(--live);
+  animation: pulse 2s infinite;
+}
+.dh-status.muted { color: var(--muted); }
+.dh-status.muted::before { background: var(--muted); animation: none; }
+.dh-right { text-align: right; }
+.dh-spd {
+  font-family: 'DM Mono', monospace;
+  font-size: 28px; font-weight: 500;
+  color: var(--accent); line-height: 1;
+}
+.dh-unit {
+  font-size: 9px; font-weight: 700;
+  letter-spacing: .1em; text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* Drawer scrollable body */
+#drawer-body {
+  overflow-y: auto; overflow-x: hidden;
+  max-height: calc(100vh - 68px);
+  padding: 0 22px 40px;
+}
+#drawer-body::-webkit-scrollbar { width: 3px; }
+#drawer-body::-webkit-scrollbar-thumb { background: var(--rule); }
+
+/* Data row */
+.data-row {
+  display: grid; grid-template-columns: repeat(4, 1fr);
+  padding: 12px 0; border-bottom: 1px solid var(--rule);
+  gap: 0 8px;
+}
+.dr-val {
+  font-family: 'DM Mono', monospace;
+  font-size: 15px; font-weight: 500;
+  color: var(--text); line-height: 1; margin-bottom: 3px;
+}
+.dr-lbl {
+  font-size: 8px; font-weight: 700;
+  letter-spacing: .1em; text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* Section label */
+.sec-lbl {
+  font-size: 9px; font-weight: 700;
+  letter-spacing: .15em; text-transform: uppercase;
+  color: var(--muted); padding: 13px 0 8px;
+  display: flex; justify-content: space-between;
+  align-items: center; cursor: pointer; user-select: none;
+}
+.sec-arrow { font-size: 8px; opacity: .5; transition: transform .2s; }
+.sec-lbl.collapsed .sec-arrow { transform: rotate(-90deg); }
+.sec-content { }
+.sec-content.hidden { display: none; }
+
+/* Fields */
+.field { margin-bottom: 9px; }
+.field-label {
+  font-size: 9px; font-weight: 700;
+  letter-spacing: .1em; text-transform: uppercase;
+  color: var(--muted); margin-bottom: 4px;
+}
+.field-label span { font-weight: 400; text-transform: none; letter-spacing: 0; }
+
+.ac-wrap { position: relative; }
+.ac-inp {
+  width: 100%; padding: 7px 10px;
+  background: rgba(0,0,0,.04);
+  border: 1px solid transparent; border-radius: 6px;
+  font-size: 11px; font-family: 'DM Sans', sans-serif;
+  color: var(--text); outline: none; transition: border-color .12s;
+}
+.ac-inp:focus { border-color: rgba(0,149,176,.3); background: rgba(255,255,255,.5); }
+.ac-list {
+  position: absolute; top: calc(100% + 4px); left: 0; right: 0;
+  background: rgba(255,255,255,.97);
+  border: 1px solid rgba(0,0,0,.1); border-radius: 8px;
+  z-index: 9999; max-height: 160px; overflow-y: auto;
+  display: none; box-shadow: 0 8px 24px rgba(0,0,0,.12);
+}
+.ac-list.show { display: block; }
+.ac-item {
+  padding: 7px 10px; font-size: 11px;
+  cursor: pointer; border-bottom: 1px solid var(--rule);
+  color: var(--text); font-family: 'DM Sans', sans-serif;
+}
+.ac-item:last-child { border-bottom: none; }
+.ac-item:hover { background: rgba(0,149,176,.06); color: var(--accent); }
+.ac-item small { color: var(--muted); font-size: 9px; display: block; }
+
+.field-row { display: flex; gap: 5px; align-items: flex-start; }
+.field-date, .field-time {
+  padding: 7px 8px;
+  background: rgba(0,0,0,.04); border: 1px solid transparent;
+  border-radius: 6px; font-size: 11px;
+  font-family: 'DM Sans', sans-serif; color: var(--text); outline: none;
+}
+.field-date { width: 116px; }
+.field-time { width: 78px; }
+.field-fmt { font-size: 8px; color: var(--muted); margin-top: 3px; text-align: center; }
+.field-coord {
+  font-size: 9px; color: var(--live);
+  font-family: 'DM Mono', monospace; margin-top: 3px; min-height: 12px;
+}
+
+#btn-manual-apply {
+  background: none; border: none;
+  color: var(--accent); font-size: 11px; font-weight: 600;
+  cursor: pointer; padding: 0;
+  font-family: 'DM Sans', sans-serif;
+  text-decoration: underline; text-underline-offset: 2px;
+  margin-top: 2px;
+}
+#manual-result {
+  margin-top: 7px; font-size: 10px;
+  color: var(--muted); min-height: 12px; line-height: 1.5;
+}
+
+/* AIS report */
+#ai-result { }
+#ai-text {
+  font-size: 11px; line-height: 1.75;
+  color: var(--text);
+}
+
+/* Voyage rows */
+.route {
+  display: flex; justify-content: space-between;
+  align-items: flex-start;
+  padding: 8px 0; border-bottom: 1px solid var(--rule);
+}
+.route:last-child { border-bottom: none; }
+.route-left { }
+.route-name {
+  font-size: 12px; font-weight: 600;
+  color: var(--text); margin-bottom: 2px;
+  display: flex; align-items: center; gap: 6px;
+}
+.route-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.route-meta { font-size: 10px; color: var(--muted); }
+.route-btns { display: flex; gap: 10px; flex-shrink: 0; padding-top: 2px; }
+.rbtn {
+  font-size: 10px; font-weight: 600;
+  color: var(--accent); background: none;
+  border: none; cursor: pointer; padding: 0;
+  font-family: 'DM Sans', sans-serif; opacity: .8;
+}
+.rbtn:hover { opacity: 1; }
+.rbtn.playing { color: var(--live); }
+
+/* Log */
+#log-wrap {
+  font-size: 10px; color: var(--muted);
+  max-height: 120px; overflow-y: auto; line-height: 1.5;
+}
+#log-wrap div { padding: 3px 0; border-bottom: 1px solid var(--rule); }
+#log-wrap div:last-child { border-bottom: none; }
+
+/* Map banner (coordinate display near marker) */
+#map-banner {
+  position: fixed; z-index: 800;
+  background: var(--glass);
+  border: 1px solid var(--border);
+  backdrop-filter: blur(14px);
+  border-radius: 8px; padding: 6px 12px;
+  pointer-events: none;
+  box-shadow: 0 2px 12px rgba(0,0,0,.1);
+  display: none;
+}
+#map-banner.on { display: block; }
+.banner-sub { font-size: 10px; color: var(--muted); font-family: 'DM Mono', monospace; }
+.banner-live {
+  font-size: 9px; font-weight: 700;
+  color: var(--live); margin-top: 2px; display: none;
+}
+.banner-live.on { display: flex; align-items: center; gap: 4px; }
+.banner-live::before {
+  content: ''; width: 5px; height: 5px;
+  border-radius: 50%; background: var(--live);
+  animation: pulse 2s infinite;
+}
+
+/* hidden IDs kept for JS compat */
+#last-pos, #lp-loc, #lp-detail { display: none; }
+#fetch-status-hidden { display: none; }
+
+/* Mobile */
+#toggle-sidebar { display: none; }
+
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes fadeIn { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:translateY(0); } }
+
+/* ══════════════════════════════════
    IRON MAIDEN DARK SKIN
-══════════════════════════════════════════ */
-body.dark-skin{
-  --bg:#080401;
-  --card:#0d0502;
-  --border:#2a0e00;
-  --text:#e0ccaa;
-  --muted:#5a3a1a;
-  --accent:#b01800;
-  --live:#22b050;
-  --warn:#cc8800;
-  --danger:#ff2200;
-  --label:#5a3a1a;
-  --faint:rgba(255,255,255,.03);
-  --rule:rgba(80,20,0,.22);
+══════════════════════════════════ */
+body.dark-skin {
+  --accent:  #b01800;
+  --live:    #22b050;
+  --warn:    #cc8800;
+  --danger:  #ff2200;
+  --text:    #e0ccaa;
+  --muted:   #5a3a1a;
+  --rule:    rgba(80,20,0,.2);
+  --glass:   rgba(10,5,2,.92);
+  --gb:      rgba(8,4,1,.7);
+  --shadow:  0 8px 32px rgba(0,0,0,.6), 0 2px 8px rgba(0,0,0,.4);
+  --border:  rgba(80,20,0,.3);
 }
-body.dark-skin body{background:#080401}
-body.dark-skin #sidebar{background:#0a0502;border-right-color:var(--rule)}
-body.dark-skin #hdr{background:linear-gradient(180deg,#0e0502 0%,#090401 100%);border-bottom-color:var(--rule)}
-body.dark-skin .vname{color:#c8a040;text-shadow:0 2px 20px rgba(160,20,0,.2);letter-spacing:.04em}
-body.dark-skin .eyebrow{color:#2e1005}
-body.dark-skin .vmeta{color:#3a1808}
-body.dark-skin #skin-toggle{color:#4a2808}
-body.dark-skin #last-pos{border-top-color:var(--rule);color:#4a2808}
-body.dark-skin #last-pos strong{color:#8a5830}
-body.dark-skin .live-dot{color:var(--live)}
-body.dark-skin .live-dot::before{background:var(--live)}
-body.dark-skin #btn-fetch{background:#921000;letter-spacing:.06em}
-body.dark-skin #btn-fetch:hover{filter:brightness(1.15)}
-body.dark-skin .interval-btn{background:rgba(255,255,255,.03);color:#4a2808;border:1px solid var(--rule)}
-body.dark-skin .interval-btn.active{background:#921000;color:#e0ccaa;border-color:#921000}
-body.dark-skin #fetch-status{color:#3a1808}
-body.dark-skin #divider{background:var(--rule)}
-body.dark-skin #divider:hover,body.dark-skin #divider.dragging{background:var(--accent)}
-body.dark-skin .sec-header:hover{background:rgba(80,15,0,.12)}
-body.dark-skin .sec-title{color:#4a2808}
-body.dark-skin .sec-arrow{opacity:.4}
-body.dark-skin .kv-label{color:#4a2808}
-body.dark-skin .kv-val{color:#c8a040}
-body.dark-skin .kv-val.spd{color:#c83000}
-body.dark-skin .kv-val.sm{color:#c8a040}
-body.dark-skin .kv-val.live-val{color:var(--live)}
-body.dark-skin .kv-sub{color:#3a1808}
-body.dark-skin .field-label{color:#4a2808}
-body.dark-skin .ac-inp{background:rgba(255,255,255,.03);border-color:transparent;color:var(--text)}
-body.dark-skin .ac-inp:focus{border-color:rgba(160,30,0,.4);background:rgba(255,255,255,.04)}
-body.dark-skin .field-date,body.dark-skin .field-time{background:rgba(255,255,255,.03);color:var(--text)}
-body.dark-skin .field-coord{color:#22b050}
-body.dark-skin .field-fmt{color:#3a1808}
-body.dark-skin .ac-list{background:#0e0502;border-color:var(--rule)}
-body.dark-skin .ac-item{color:var(--text);border-color:var(--rule)}
-body.dark-skin .ac-item:hover{background:rgba(60,10,0,.4);color:#c8a040}
-body.dark-skin #btn-manual-apply{color:#7a3010}
-body.dark-skin #btn-manual-apply:hover{color:#c8a040}
-body.dark-skin #manual-result{color:#3a1808}
-body.dark-skin #ai-text{color:#6a4020}
-body.dark-skin .route{border-bottom-color:var(--rule)}
-body.dark-skin .route-name{color:var(--text)}
-body.dark-skin .route-meta{color:#4a2808}
-body.dark-skin .rbtn{color:#7a3010}
-body.dark-skin .rbtn:hover{color:#c8a040}
-body.dark-skin #log-wrap{color:#4a2808}
-body.dark-skin #log-wrap div{border-color:var(--rule)}
-body.dark-skin #map-banner{background:rgba(6,2,1,.96);border-color:rgba(60,18,0,.5);color:var(--text)}
-body.dark-skin .banner-name{color:#c8a050}
-body.dark-skin .banner-sub{color:var(--muted)}
-body.dark-skin .mbtn{background:rgba(8,3,1,.92);border-color:var(--border);color:var(--muted)}
-body.dark-skin .mbtn:hover{border-color:var(--accent);color:var(--accent)}
-body.dark-skin .mbtn.active{background:var(--accent);color:#e0ccaa;border-color:var(--accent)}
-body.dark-skin #toggle-sidebar{background:rgba(8,3,1,.95);border-color:var(--border);color:var(--text)}
+body.dark-skin #btn-fetch { background: #921000; }
+body.dark-skin .interval-btn.active { background: #921000; color: #e0ccaa; }
+body.dark-skin .mbtn.active { color: #cc2800; border-color: rgba(160,20,0,.3); }
+body.dark-skin #skin-toggle { color: rgba(100,50,20,.7); }
+body.dark-skin .ft-dot { background: #cc2800; }
+body.dark-skin .vc-val.spd { color: #cc2800; }
+body.dark-skin .dh-spd { color: #cc2800; }
+body.dark-skin .vc-name { color: #c8a040; }
+body.dark-skin .dh-name { color: #c8a040; }
+body.dark-skin .dr-val { color: #c8a040; }
+body.dark-skin .ac-list { background: rgba(12,6,2,.98); border-color: rgba(80,20,0,.3); }
+body.dark-skin .ac-item { color: var(--text); border-color: var(--rule); }
+body.dark-skin .ac-item:hover { background: rgba(60,10,0,.4); color: #c8a040; }
+body.dark-skin .ac-inp { color: var(--text); }
+body.dark-skin .ac-inp:focus { border-color: rgba(160,30,0,.4); }
+body.dark-skin .field-date, body.dark-skin .field-time { color: var(--text); }
+body.dark-skin #btn-manual-apply { color: rgba(160,60,20,.9); }
+body.dark-skin .rbtn { color: rgba(160,60,20,.8); }
+body.dark-skin .rbtn:hover { color: #c8a040; }
+body.dark-skin .banner-live { color: var(--live); }
+body.dark-skin .banner-live::before { background: var(--live); }
+body.dark-skin #drawer { border-top-color: rgba(80,20,0,.25); }
+body.dark-skin .drawer-bar { background: rgba(100,30,0,.3); }
 </style>
 </head>
 <body>
 <script>if(localStorage.getItem("skin")==="dark")document.body.classList.add("dark-skin");</script>
-<div id="app">
 
-  <div id="sidebar">
-
-    <!-- HEADER -->
-    <div id="hdr">
-      <div class="eyebrow">Live Vessel Tracker</div>
-      <button id="skin-toggle" type="button" onclick="toggleSkin()">⬛ Iron Maiden</button>
-      <div class="vname">Saint<br>Emilion</div>
-      <div class="vmeta">MMSI 367399980 · Hudson River / NY Harbor</div>
-      <div id="last-pos">
-        <strong id="lp-loc">—</strong><br>
-        <span id="lp-detail"></span>
-        <div class="live-dot" id="live-dot-hdr">Position updated</div>
-      </div>
-    </div>
-
-    <!-- FETCH STRIP -->
-    <div id="fetch-wrap">
-      <button id="btn-fetch" type="button">Fetch Live Position</button>
-      <div class="interval-row">
-        <span class="interval-label">Auto</span>
-        <div id="auto-toggle">
-          <button type="button" class="interval-btn" data-seconds="30">30s</button>
-          <button type="button" class="interval-btn" data-seconds="60">1m</button>
-          <button type="button" class="interval-btn active" data-seconds="300">5m</button>
-          <button type="button" class="interval-btn" data-seconds="0">Off</button>
-        </div>
-      </div>
-      <div id="fetch-status">Starting auto-update…</div>
-    </div>
-
-    <!-- SCROLLABLE BODY -->
-    <div id="sidebar-body">
-
-      <!-- CURRENT STATUS -->
-      <div class="sec-wrap">
-        <div class="sec-header" onclick="toggleSec(this)">
-          <div class="sec-title">Current Status</div>
-          <span class="sec-arrow">▾</span>
-        </div>
-        <div class="sec-body">
-          <div class="kv-grid">
-            <div class="kv">
-              <div class="kv-label">Speed</div>
-              <div class="kv-val spd" id="v-spd">—</div>
-              <div class="kv-sub">knots</div>
-            </div>
-            <div class="kv">
-              <div class="kv-label">Course</div>
-              <div class="kv-val" id="v-cog">—</div>
-              <div class="kv-sub">degrees</div>
-            </div>
-            <div class="kv">
-              <div class="kv-label">Status</div>
-              <div class="kv-val live-val" id="v-nav">—</div>
-            </div>
-            <div class="kv">
-              <div class="kv-label">Last Fix</div>
-              <div class="kv-val sm" id="v-fix">—</div>
-            </div>
-            <div class="kv full">
-              <div class="kv-label">Est. Arrival</div>
-              <div class="kv-val sm" id="v-eta">—</div>
-              <div class="kv-sub" id="v-eta-sub"></div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- MANUAL POSITION -->
-      <div class="sec-wrap" id="manual-wrap">
-        <div class="sec-header" onclick="toggleSec(this)">
-          <div class="sec-title">Manual Position</div>
-          <span class="sec-arrow">▾</span>
-        </div>
-        <div class="sec-body">
-
-          <div class="field">
-            <div class="field-label">Started at</div>
-            <div class="field-row">
-              <div class="ac-wrap" style="flex:1">
-                <input class="ac-inp" id="inp-start" placeholder="Dock, port, or location…" autocomplete="off">
-                <div class="ac-list" id="list-start"></div>
-              </div>
-              <div style="display:flex;flex-direction:column;gap:3px;flex-shrink:0">
-                <input type="date" id="date-start" class="field-date">
-                <input type="time" id="time-start" class="field-time" title="24-hour format">
-                <div class="field-fmt">24hr</div>
-              </div>
-            </div>
-            <div class="field-coord" id="start-coord"></div>
-          </div>
-
-          <div class="field">
-            <div class="field-label">Currently at <span>(optional)</span></div>
-            <div class="ac-wrap">
-              <input class="ac-inp" id="inp-current" placeholder="e.g. New Hamburg…" autocomplete="off">
-              <div class="ac-list" id="list-current"></div>
-            </div>
-            <div class="field-coord" id="current-coord"></div>
-          </div>
-
-          <div class="field">
-            <div class="field-label">Heading to <span>(optional)</span></div>
-            <div class="ac-wrap">
-              <input class="ac-inp" id="inp-dest" placeholder="e.g. Albany Oil Terminal…" autocomplete="off">
-              <div class="ac-list" id="list-dest"></div>
-            </div>
-            <div class="field-coord" id="dest-coord"></div>
-          </div>
-
-          <button type="button" id="btn-manual-apply">Recalibrate ETA</button>
-          <div id="manual-result"></div>
-
-        </div>
-      </div>
-
-      <!-- LIVE AIS REPORT -->
-      <div class="sec-wrap" id="ai-result">
-        <div class="sec-header" onclick="toggleSec(this)">
-          <div class="sec-title">Live AIS Report</div>
-          <span class="sec-arrow">▾</span>
-        </div>
-        <div class="sec-body">
-          <div id="ai-text"></div>
-        </div>
-      </div>
-
-      <!-- RECENT VOYAGES -->
-      <div class="sec-wrap">
-        <div class="sec-header" onclick="toggleSec(this)">
-          <div class="sec-title">Recent Voyages</div>
-          <span class="sec-arrow">▾</span>
-        </div>
-        <div class="sec-body">
-          <div id="route-list"></div>
-        </div>
-      </div>
-
-      <!-- ACTIVITY LOG -->
-      <div class="sec-wrap">
-        <div class="sec-header collapsed" onclick="toggleSec(this)">
-          <div class="sec-title">Activity Log</div>
-          <span class="sec-arrow">▾</span>
-        </div>
-        <div class="sec-body hidden">
-          <div id="log-wrap"></div>
-        </div>
-      </div>
-
-    </div><!-- /sidebar-body -->
-  </div>
-
-  <div id="divider"></div>
-  <div id="map-wrap">
-    <button id="toggle-sidebar" type="button">☰</button>
-    <div id="map"></div>
-
-    <div id="map-banner">
-      <div class="banner-name">Saint Emilion</div>
-      <div class="banner-sub" id="banner-sub">Tap "Fetch Live Position" to locate</div>
-      <div class="banner-live" id="banner-live">Position updated</div>
-    </div>
-
-    <div id="map-btns">
-      <button class="mbtn active" id="btn-follow" type="button">Follow</button>
-      <button class="mbtn" id="btn-recenter" type="button">Recenter</button>
-      <button class="mbtn active" id="btn-dr" type="button">Estimate On</button>
-      <button class="mbtn" id="btn-fs" type="button">⛶ Fullscreen</button>
-    </div>
-  </div>
-
+<!-- MAP -->
+<div id="map-wrap">
+  <div id="map"></div>
 </div>
+
+<!-- FETCH DROPDOWN -->
+<div id="fetch-wrap">
+  <div id="fetch-trigger" onclick="toggleFetchMenu()">
+    <span class="ft-dot" id="ft-dot"></span>
+    <span class="ft-label">Fetch</span>
+    <span class="ft-auto" id="ft-auto">· 5m</span>
+    <span class="ft-chevron">▾</span>
+  </div>
+  <div id="fetch-dropdown">
+    <button id="btn-fetch" type="button">Fetch Now</button>
+    <div class="fd-row">
+      <span class="fd-lbl">Auto</span>
+      <div id="auto-toggle">
+        <button type="button" class="interval-btn" data-seconds="30">30s</button>
+        <button type="button" class="interval-btn" data-seconds="60">1m</button>
+        <button type="button" class="interval-btn active" data-seconds="300">5m</button>
+        <button type="button" class="interval-btn" data-seconds="0">Off</button>
+      </div>
+    </div>
+    <div id="fetch-status"></div>
+  </div>
+</div>
+
+<!-- MAP CONTROLS -->
+<div id="map-controls">
+  <button class="mbtn active" id="btn-follow" type="button">Follow</button>
+  <button class="mbtn" id="btn-recenter" type="button">Recenter</button>
+  <button class="mbtn active" id="btn-dr" type="button">Estimate On</button>
+  <button class="mbtn" id="btn-fs" type="button">Fullscreen</button>
+  <button id="skin-toggle" type="button" onclick="toggleSkin()">Iron Maiden</button>
+</div>
+
+<!-- VESSEL FLOAT CARD (positioned by JS near marker) -->
+<div id="vessel-card">
+  <div class="vc-inner">
+    <div class="vc-name">Saint Emilion</div>
+    <div class="vc-stats">
+      <div>
+        <div class="vc-val spd" id="vc-spd">—</div>
+        <div class="vc-lbl">Knots</div>
+      </div>
+      <div>
+        <div class="vc-val" id="vc-cog">—</div>
+        <div class="vc-lbl">Course</div>
+      </div>
+      <div>
+        <div class="vc-val" id="vc-nav" style="font-size:11px;padding-top:2px">—</div>
+        <div class="vc-lbl">Status</div>
+      </div>
+    </div>
+    <div class="vc-live-row" id="vc-live">—</div>
+  </div>
+</div>
+
+<!-- BOTTOM DRAWER -->
+<div id="drawer">
+  <div class="drawer-bar"></div>
+  <div id="drawer-handle" onclick="cycleDrawer()">
+    <div class="dh-left">
+      <div class="dh-name">Saint Emilion</div>
+      <div class="dh-status muted" id="dh-status">AIS connected — awaiting signal</div>
+    </div>
+    <div class="dh-right">
+      <div class="dh-spd" id="dh-spd">—</div>
+      <div class="dh-unit">knots</div>
+    </div>
+  </div>
+
+  <div id="drawer-body">
+
+    <!-- Data row -->
+    <div class="data-row">
+      <div>
+        <div class="dr-val" id="v-spd">—</div>
+        <div class="dr-lbl">Speed</div>
+      </div>
+      <div>
+        <div class="dr-val" id="v-cog">—</div>
+        <div class="dr-lbl">Course</div>
+      </div>
+      <div>
+        <div class="dr-val" id="v-nav" style="font-size:12px">—</div>
+        <div class="dr-lbl">Status</div>
+      </div>
+      <div>
+        <div class="dr-val" id="v-fix" style="font-size:12px">—</div>
+        <div class="dr-lbl">Last Fix</div>
+      </div>
+    </div>
+
+    <!-- ETA row -->
+    <div style="padding:10px 0;border-bottom:1px solid var(--rule)">
+      <div class="dr-lbl" style="margin-bottom:4px">Est. Arrival</div>
+      <div class="dr-val" id="v-eta" style="font-size:13px">—</div>
+      <div style="font-size:9px;color:var(--muted);margin-top:2px" id="v-eta-sub"></div>
+    </div>
+
+    <!-- Manual Position -->
+    <div class="sec-lbl" id="sec-manual" onclick="toggleDrawerSec(this)">
+      Manual Position <span class="sec-arrow">▾</span>
+    </div>
+    <div class="sec-content" id="body-manual">
+      <div class="field">
+        <div class="field-label">Started at</div>
+        <div class="field-row">
+          <div class="ac-wrap" style="flex:1">
+            <input class="ac-inp" id="inp-start" placeholder="Dock, port, or location…" autocomplete="off">
+            <div class="ac-list" id="list-start"></div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:3px;flex-shrink:0">
+            <input type="date" id="date-start" class="field-date">
+            <input type="time" id="time-start" class="field-time" title="24hr format">
+            <div class="field-fmt">24hr</div>
+          </div>
+        </div>
+        <div class="field-coord" id="start-coord"></div>
+      </div>
+      <div class="field">
+        <div class="field-label">Currently at <span>(optional)</span></div>
+        <div class="ac-wrap">
+          <input class="ac-inp" id="inp-current" placeholder="e.g. New Hamburg…" autocomplete="off">
+          <div class="ac-list" id="list-current"></div>
+        </div>
+        <div class="field-coord" id="current-coord"></div>
+      </div>
+      <div class="field">
+        <div class="field-label">Heading to <span>(optional)</span></div>
+        <div class="ac-wrap">
+          <input class="ac-inp" id="inp-dest" placeholder="e.g. Albany Oil Terminal…" autocomplete="off">
+          <div class="ac-list" id="list-dest"></div>
+        </div>
+        <div class="field-coord" id="dest-coord"></div>
+      </div>
+      <button type="button" id="btn-manual-apply">Recalibrate ETA</button>
+      <div id="manual-result"></div>
+    </div>
+
+    <!-- Live AIS Report -->
+    <div class="sec-lbl" id="sec-ais" onclick="toggleDrawerSec(this)">
+      Live AIS Report <span class="sec-arrow">▾</span>
+    </div>
+    <div class="sec-content" id="body-ais">
+      <div id="ai-result"><div id="ai-text"></div></div>
+    </div>
+
+    <!-- Recent Voyages -->
+    <div class="sec-lbl" id="sec-voyages" onclick="toggleDrawerSec(this)">
+      Recent Voyages <span class="sec-arrow">▾</span>
+    </div>
+    <div class="sec-content" id="body-voyages">
+      <div id="route-list"></div>
+    </div>
+
+    <!-- Activity Log -->
+    <div class="sec-lbl collapsed" id="sec-log" onclick="toggleDrawerSec(this)">
+      Activity Log <span class="sec-arrow">▾</span>
+    </div>
+    <div class="sec-content hidden" id="body-log">
+      <div id="log-wrap"></div>
+    </div>
+
+  </div><!-- /drawer-body -->
+</div><!-- /drawer -->
+
+<!-- Hidden compatibility elements for JS -->
+<div id="last-pos"><strong id="lp-loc"></strong><span id="lp-detail"></span></div>
+<div id="map-banner"><div class="banner-sub" id="banner-sub">Locating…</div><div class="banner-live" id="banner-live"><span style="display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--live);margin-right:4px"></span>Position updated</div></div>
+<button id="toggle-sidebar" style="display:none"></button>
+<div id="sidebar" style="display:none"></div>
+<div id="divider" style="display:none"></div>
+<div id="app" style="display:none"></div>
+
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 // ── Map ──────────────────────────────────────────────────────────────
@@ -852,7 +1139,7 @@ async function fetchLivePosition(){
   const resultBox=document.getElementById('ai-result'); // always visible now
   const aiText=document.getElementById('ai-text');
 
-  btn.disabled=true; btn.textContent='Fetching…';
+  btn.disabled=true; btn.textContent='Fetching…'; document.getElementById('ft-dot').className='ft-dot waiting';
   status.textContent='Contacting AIS server…';
   log('Requesting position…');
 
@@ -925,6 +1212,7 @@ async function fetchLivePosition(){
         log(`Last known: ${parsed.lat.toFixed(4)}°N ${Math.abs(parsed.lng).toFixed(4)}°W · ${parsed.staleMinutes}min ago`);
       } else {
         status.textContent = 'Position updated — ' + (parsed.location||'');
+      document.getElementById('ft-dot').className='ft-dot live';
         log(`Position: ${parsed.lat.toFixed(4)}°N ${Math.abs(parsed.lng).toFixed(4)}°W · ${parsed.sog} kn · ${parsed.nav}`);
       }
 
@@ -936,6 +1224,7 @@ async function fetchLivePosition(){
       const isWaiting = summary.toLowerCase().includes('waiting for vessel') || summary.toLowerCase().includes('ais network');
       if (isWaiting) {
         status.textContent = 'AIS connected — awaiting signal from vessel';
+        document.getElementById('ft-dot').className='ft-dot waiting';
         log('Waiting for vessel broadcast…');
       } else {
         status.textContent = 'Position not available right now';
@@ -950,7 +1239,7 @@ async function fetchLivePosition(){
     log('Fetch error: ' + e.message);
   } finally {
     btn.disabled=false;
-    btn.textContent='🔍 Fetch Live Position';
+    btn.textContent='Fetch Now';
   }
 }
 
@@ -1077,9 +1366,7 @@ document.getElementById('btn-fs').onclick=()=>{
   if(!document.fullscreenElement) document.documentElement.requestFullscreen();
   else document.exitFullscreen();
 };
-const toggleBtn=document.getElementById('toggle-sidebar');
-const sidebar=document.getElementById('sidebar');
-toggleBtn.onclick=()=>sidebar.classList.toggle('open');
+// sidebar toggle — not used in full-bleed layout
 
 // ── Voyage recording ──────────────────────────────────────────────────
 let voyageTrack=[], voyageStartTime=null, lastMoving=false;
@@ -1122,6 +1409,9 @@ let pollTimer=null;
 function startPolling(seconds){
   if(pollTimer){clearInterval(pollTimer);pollTimer=null;}
   document.querySelectorAll('.interval-btn').forEach(b=>b.classList.toggle('active',parseInt(b.dataset.seconds)===seconds));
+  const autoLabel = seconds===0 ? '· off' : seconds>=60 ? '· '+(seconds/60)+'m' : '· '+seconds+'s';
+  const ftAuto = document.getElementById('ft-auto');
+  if (ftAuto) ftAuto.textContent = autoLabel;
   if(seconds===0){document.getElementById('fetch-status').textContent='Auto-update off';return;}
   fetchLivePosition();
   pollTimer=setInterval(fetchLivePosition,seconds*1000);
@@ -1349,8 +1639,8 @@ document.getElementById('btn-manual-apply').addEventListener('click', async () =
     document.getElementById('v-cog').textContent = (lastFix.cog || 12) + '°';
     document.getElementById('v-nav').textContent = 'Underway';
     document.getElementById('v-fix').textContent = new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'});
-    document.getElementById('sc-spd').classList.add('hi');
-    document.getElementById('sc-nav').classList.add('hi');
+    // sc-spd removed in redesign
+    // sc-nav removed in redesign
 
     // Update banner
     document.getElementById('banner-sub').textContent = currentCoords.lat.toFixed(4) + '°N  ' + Math.abs(currentCoords.lng).toFixed(4) + '°W';
@@ -1380,7 +1670,7 @@ document.getElementById('btn-manual-apply').addEventListener('click', async () =
     // Update status to show underway from start
     document.getElementById('v-spd').textContent = (lastFix.sog || 7).toFixed(1);
     document.getElementById('v-nav').textContent = 'Underway';
-    document.getElementById('sc-nav').classList.add('hi');
+    // sc-nav removed in redesign
   }
 
   result.textContent = infoText;
@@ -1519,7 +1809,7 @@ function toggleSkin() {
   const isDark = document.body.classList.toggle('dark-skin');
   localStorage.setItem('skin', isDark ? 'dark' : 'light');
   const btn = document.getElementById('skin-toggle');
-  btn.textContent = isDark ? '◻ Light Skin' : '⬛ Iron Maiden';
+  btn.textContent = isDark ? 'Light Skin' : 'Iron Maiden';
   // Switch Leaflet tile layer
   if (isDark && darkTiles && !map.hasLayer(darkTiles)) {
     map.removeLayer(lightTiles);
@@ -1534,9 +1824,98 @@ function toggleSkin() {
   if (localStorage.getItem('skin') === 'dark') {
     document.body.classList.add('dark-skin');
     const btn = document.getElementById('skin-toggle');
-    if (btn) btn.textContent = '◻ Light Skin';
+    if (btn) btn.textContent = 'Light Skin';
   }
 })();
+
+
+// ── New UI: Fetch dropdown ────────────────────────────────────────────
+function toggleFetchMenu() {
+  const wrap = document.getElementById('fetch-wrap');
+  wrap.classList.toggle('open');
+}
+document.addEventListener('click', e => {
+  if (!e.target.closest('#fetch-wrap'))
+    document.getElementById('fetch-wrap').classList.remove('open');
+});
+
+// ── New UI: Drawer cycle ──────────────────────────────────────────────
+function cycleDrawer() {
+  const d = document.getElementById('drawer');
+  if (!d.classList.contains('half') && !d.classList.contains('full')) {
+    d.classList.add('half');
+  } else if (d.classList.contains('half')) {
+    d.classList.remove('half'); d.classList.add('full');
+  } else {
+    d.classList.remove('full'); d.classList.remove('half');
+  }
+}
+
+// ── New UI: Section collapse inside drawer ────────────────────────────
+function toggleDrawerSec(lbl) {
+  const id = lbl.id.replace('sec-', 'body-');
+  const body = document.getElementById(id);
+  if (!body) return;
+  const hidden = body.classList.toggle('hidden');
+  lbl.classList.toggle('collapsed', hidden);
+}
+
+// ── New UI: Vessel card positioning ──────────────────────────────────
+function positionVesselCard() {
+  if (!saintMarker) return;
+  const card = document.getElementById('vessel-card');
+  const pt = map.latLngToContainerPoint(saintMarker.getLatLng());
+  card.style.left = (pt.x - 87) + 'px';  // center roughly
+  card.style.top  = (pt.y + 32) + 'px';  // just below marker
+  card.classList.add('on');
+}
+// Update card on map move/zoom
+if (typeof map !== 'undefined') {
+  map.on('move zoom', positionVesselCard);
+  map.on('moveend zoomend', positionVesselCard);
+}
+
+// ── New UI: Update vessel card + drawer handle with live data ─────────
+function updateLiveUI(sog, cog, nav, isStale, fixLabel) {
+  // Float card
+  document.getElementById('vc-spd').textContent = sog != null ? sog.toFixed(1) : '—';
+  document.getElementById('vc-cog').textContent = cog != null ? Math.round(cog) + '°' : '—';
+  document.getElementById('vc-nav').textContent = nav || '—';
+  const liveRow = document.getElementById('vc-live');
+  if (isStale) {
+    liveRow.textContent = fixLabel || 'Last known';
+    liveRow.className = 'vc-live-row stale';
+  } else {
+    liveRow.textContent = fixLabel || 'Live';
+    liveRow.className = 'vc-live-row';
+  }
+  // Drawer handle
+  document.getElementById('dh-spd').textContent = sog != null ? sog.toFixed(1) : '—';
+  const dhStatus = document.getElementById('dh-status');
+  if (sog != null && sog > 0.3) {
+    dhStatus.textContent = (nav || 'Underway') + (isStale ? ' · last known' : '');
+    dhStatus.className = isStale ? 'dh-status muted' : 'dh-status';
+  } else if (sog != null) {
+    dhStatus.textContent = 'Moored' + (isStale ? ' · last known' : '');
+    dhStatus.className = isStale ? 'dh-status muted' : 'dh-status';
+  }
+  positionVesselCard();
+}
+
+// Patch placeSaint to also update new UI elements
+const _origPlaceSaint = placeSaint;
+placeSaint = function(lat, lng, cog, sog, nav, apiTs, isStale) {
+  _origPlaceSaint(lat, lng, cog, sog, nav, apiTs, isStale);
+  const fixLabel = isStale ? 'Last known' : 'Live · just now';
+  updateLiveUI(sog, cog, nav, isStale, fixLabel);
+  positionVesselCard();
+};
+
+// ── Remove draggable divider (not used in new layout) ─────────────────
+// (divider element is hidden, JS still runs but targets hidden el — harmless)
+
+// ── Map banner: position near top-left of map ─────────────────────────
+// banner is hidden in new layout — coordinates shown in vessel card instead
 
 </script>
 </body>
