@@ -303,6 +303,137 @@ function httpGet(url, headers = {}) {
   });
 }
 
+
+// ── Voyage data cache ─────────────────────────────────────────────────────────
+let voyageCache = null;
+let voyageCacheTs = 0;
+const VOYAGE_CACHE_MS = 10 * 60 * 1000; // 10 min
+
+async function fetchVoyageData() {
+  const now = Date.now();
+  if (voyageCache && (now - voyageCacheTs) < VOYAGE_CACHE_MS) {
+    console.log('Serving cached voyage data');
+    return voyageCache;
+  }
+
+  console.log('Fetching voyage data from myshiptracking vessel page...');
+  const ua = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+
+  try {
+    const r = await httpGet(
+      `https://www.myshiptracking.com/vessels/saint-emilion-mmsi-${MMSI}-imo-8741832`,
+      { 'User-Agent': ua, 'Accept': 'text/html', 'Accept-Language': 'en-US,en;q=0.9' }
+    );
+
+    if (r.status !== 200) {
+      console.log('Voyage page fetch failed:', r.status);
+      return null;
+    }
+
+    const html = r.body;
+    const data = {};
+
+    // ── Current position coordinates ──────────────────────────────
+    const coordMatch = html.match(/coordinates\s+([\d.-]+)°\s*\/\s*([\d.-]+)°/i);
+    if (coordMatch) {
+      data.lat = parseFloat(coordMatch[1]);
+      data.lng = parseFloat(coordMatch[2]);
+    }
+
+    // ── Speed ─────────────────────────────────────────────────────
+    const speedMatch = html.match(/Speed[^<]*<[^>]+>\s*([\d.]+)\s*Knots/i) ||
+                       html.match(/speed is\s*<[^>]*>\s*([\d.]+)\s*Knots/i);
+    if (speedMatch) data.sog = parseFloat(speedMatch[1]);
+
+    // ── Course ────────────────────────────────────────────────────
+    const courseMatch = html.match(/Course[^<]*:\s*([\d.]+)°/i);
+    if (courseMatch) data.cog = parseFloat(courseMatch[1]);
+
+    // ── Departure port + time ─────────────────────────────────────
+    const deptMatch = html.match(/PORT DEPARTURE[^|]*\|\s*([^\|]+)\s*\|\s*([\d-]+ [\d:]+)/i) ||
+                      html.match(/PORT DEPARTURE.*?([A-Z][A-Z ]+)\s*\|\s*([\d-]+ [\d:]+)/);
+    if (deptMatch) {
+      data.departurePort = deptMatch[1].trim();
+      data.departureTime = deptMatch[2].trim() + ' UTC';
+    }
+
+    // ── Departure via ATD field ───────────────────────────────────
+    const atdMatch = html.match(/ATD\s*[
+
+\s]*(?:<[^>]+>)*\s*([\d-]+ [\d:]+)/i);
+    if (atdMatch && !data.departureTime) {
+      data.departureTime = atdMatch[1].trim() + ' UTC';
+    }
+
+    // ── Departure port via "PORT DEPARTURE" event row ─────────────
+    const deptPortMatch = html.match(/PORT DEPARTURE[\s\S]{0,200}?([A-Z]{2}[A-Z ]{2,30})\s*
+/);
+    if (deptPortMatch && !data.departurePort) {
+      data.departurePort = deptPortMatch[1].trim();
+    }
+
+    // ── Albany departure specifically ─────────────────────────────
+    const albanyMatch = html.match(/ALBANY[\s\S]{0,100}?([\d-]+ [\d:]+)\s*(?:\(UTC\))?/i);
+    if (albanyMatch) {
+      data.departurePort = data.departurePort || 'ALBANY';
+      data.departureTime = data.departureTime || albanyMatch[1].trim() + ' UTC';
+    }
+
+    // ── Distance traveled ─────────────────────────────────────────
+    const distMatch = html.match(/Distance Travelled[^<]*[\s\S]{0,50}?([\d.]+)\s*nm/i);
+    if (distMatch) data.distanceTraveled = parseFloat(distMatch[1]);
+
+    // ── Average speed ─────────────────────────────────────────────
+    const avgMatch = html.match(/AVG Speed[^<]*[\s\S]{0,50}?([\d.]+)\s*Knots/i);
+    if (avgMatch) data.avgSpeed = parseFloat(avgMatch[1]);
+
+    // ── Max speed ─────────────────────────────────────────────────
+    const maxMatch = html.match(/MAX Speed[^<]*[\s\S]{0,50}?([\d.]+)\s*Knots/i);
+    if (maxMatch) data.maxSpeed = parseFloat(maxMatch[1]);
+
+    // ── Time travelled ────────────────────────────────────────────
+    const timeMatch = html.match(/Time Travelled[^<]*[\s\S]{0,80}?([\d]+\s*h[^<,]{0,20})/i);
+    if (timeMatch) data.timeTraveled = timeMatch[1].trim();
+
+    // ── Last port calls (extract table rows) ──────────────────────
+    const portCalls = [];
+    const portRegex = /([A-Z][A-Z ]{2,20})\s*[\s\S]{0,30}?([\d-]+ [\d:]+)\s*[\s\S]{0,10}?([\d-]+ [\d:]+)?/g;
+    const pcSection = html.match(/Last Port Calls[\s\S]{0,3000}/i);
+    if (pcSection) {
+      const rowMatches = pcSection[0].matchAll(/ALBANY|NEW YORK|YONKERS|BAYONNE|PERTH AMBOY|LINDEN/gi);
+      const seen = new Set();
+      for (const m of rowMatches) {
+        if (!seen.has(m[0].toUpperCase())) {
+          seen.add(m[0].toUpperCase());
+          portCalls.push(m[0].toUpperCase());
+        }
+      }
+    }
+    if (portCalls.length) data.recentPorts = portCalls;
+
+    // ── Nav status ────────────────────────────────────────────────
+    const navMatch = html.match(/Pushing Ahead|Under way|Moored|At Anchor|Underway/i);
+    if (navMatch) data.nav = parseNavStatus(navMatch[0]);
+
+    // ── Draught ───────────────────────────────────────────────────
+    const draughtMatch = html.match(/Draught[^<]*[\s\S]{0,50}?([\d.]+)\s*m/i);
+    if (draughtMatch) data.draught = parseFloat(draughtMatch[1]);
+
+    data.source = 'myshiptracking.com';
+    data.fetchedAt = new Date().toISOString();
+    data.fetchedAtTs = now;
+
+    console.log('Voyage data:', JSON.stringify(data));
+    voyageCache = data;
+    voyageCacheTs = now;
+    return data;
+
+  } catch(e) {
+    console.error('Voyage fetch error:', e.message);
+    return null;
+  }
+}
+
 // ── HTTP Server ───────────────────────────────────────────────────────────────
 const httpServer = http.createServer(async (req, res) => {
   setCORS(res);
@@ -321,6 +452,18 @@ const httpServer = http.createServer(async (req, res) => {
       aisCacheAge: aisCache ? Math.round((Date.now()-aisCache.ts)/1000)+'s ago' : 'none',
       lastScrape: lastScrapeTs ? new Date(lastScrapeTs).toISOString() : 'never'
     }));
+    return;
+  }
+
+  // Voyage data endpoint
+  if (req.method === 'GET' && req.url === '/voyage') {
+    try {
+      const data = await fetchVoyageData();
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(data || { error: 'no data' }));
+    } catch(e) {
+      res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
+    }
     return;
   }
 
@@ -383,5 +526,6 @@ httpServer.listen(PORT, () => {
   console.log('VESSELAPI_KEY:   ', VESSELAPI_KEY    ? '✓ set' : '✗ missing');
   console.log('API active:      ', apiIsActive() ? 'YES' : 'NO — using scrape');
   connectAisstream();
+  // Pre-fetch voyage data on startup
+  setTimeout(fetchVoyageData, 3000);
 });
-
