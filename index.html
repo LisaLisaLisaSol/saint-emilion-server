@@ -842,8 +842,6 @@ body.dark-skin #btn-lightning {
     <div class="fd-row">
       <span class="fd-lbl">Auto</span>
       <div id="auto-toggle">
-        <button type="button" class="interval-btn" data-seconds="30">30s</button>
-        <button type="button" class="interval-btn" data-seconds="60">1m</button>
         <button type="button" class="interval-btn active" data-seconds="300">5m</button>
         <button type="button" class="interval-btn" data-seconds="0">Off</button>
       </div>
@@ -1822,16 +1820,42 @@ function saveVoyage(){
 
 // ── Auto-polling ───────────────────────────────────────────────────────
 let pollTimer=null;
+let mooredCheckTimer = null;
+
 function startPolling(seconds){
   if(pollTimer){clearInterval(pollTimer);pollTimer=null;}
+  if(mooredCheckTimer){clearInterval(mooredCheckTimer);mooredCheckTimer=null;}
   document.querySelectorAll('.interval-btn').forEach(b=>b.classList.toggle('active',parseInt(b.dataset.seconds)===seconds));
-  const autoLabel = seconds===0 ? '· off' : seconds>=60 ? '· '+(seconds/60)+'m' : '· '+seconds+'s';
   const ftAuto = document.getElementById('ft-auto');
-  if (ftAuto) ftAuto.textContent = autoLabel;
-  if(seconds===0){document.getElementById('fetch-status').textContent='Auto-update off';return;}
+  if(seconds===0){
+    if(ftAuto) ftAuto.textContent='· off';
+    document.getElementById('fetch-status').textContent='Auto-update off';
+    return;
+  }
+  if(ftAuto) ftAuto.textContent='· 5m';
   fetchLivePosition();
-  pollTimer=setInterval(fetchLivePosition,seconds*1000);
-  document.getElementById('fetch-status').textContent='Auto-updating every '+(seconds>=60?(seconds/60)+'m':seconds+'s');
+  pollTimer=setInterval(()=>{
+    // If moored (speed < 0.5 kn), slow poll to 15min background check
+    if(lastFix && lastFix.sog < 0.5){
+      // Already handled by mooredCheckTimer — skip active poll
+      return;
+    }
+    fetchLivePosition();
+  }, seconds*1000);
+  document.getElementById('fetch-status').textContent='Tracking every 5m';
+
+  // Background moored check — every 15min when vessel is stopped
+  mooredCheckTimer = setInterval(async ()=>{
+    if(lastFix && lastFix.sog < 0.5){
+      console.log('Vessel moored — background check…');
+      await fetchLivePosition();
+      // If now moving, notify and restore active polling
+      if(lastFix && lastFix.sog >= 0.5){
+        document.getElementById('fetch-status').textContent='Vessel underway — resuming tracking';
+        log('Vessel started moving — resuming 5m tracking');
+      }
+    }
+  }, 15*60*1000);
 }
 
 // ── Rebuild renderRoutes to include live saved voyages ─────────────────
