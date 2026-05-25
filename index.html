@@ -616,10 +616,10 @@ body.dark-skin .drawer-bar { background: rgba(100,30,0,.3); }
 #ferryman {
   position: fixed;
   bottom: 0;
-  left: -4vw;             /* tightly cropped image — minimal bleed */
-  width: 65vw;
-  max-width: 980px;
-  min-width: 380px;
+  left: -2vw;
+  width: 42vw;            /* ~40% of screen width — scales with window */
+  max-width: 520px;       /* cap so it doesn't get huge on wide screens */
+  min-width: 0;           /* no minimum — let it scale freely */
   z-index: 710;
   pointer-events: none;
   display: none;
