@@ -605,8 +605,8 @@ body.dark-skin .drawer-bar { background: rgba(100,30,0,.3); }
 /* ── Ferryman overlay (Iron Maiden dark skin only) ── */
 #ferryman {
   position: fixed;
-  bottom: 68px;           /* resting: sits just above drawer handle */
-  left: -2vw;             /* slight bleed left for drama */
+  bottom: 68px;
+  left: -12vw;            /* pushed further left — arm reaches into map */
   width: 62vw;
   max-width: 780px;
   min-width: 320px;
@@ -615,7 +615,6 @@ body.dark-skin .drawer-bar { background: rgba(100,30,0,.3); }
   display: none;
   mix-blend-mode: lighten;
   opacity: 0;
-  /* transitions: opacity fade + bottom position matching drawer */
   transition: opacity 1.2s ease, bottom .32s cubic-bezier(.32,.72,0,1);
 }
 #ferryman.visible {
@@ -623,8 +622,33 @@ body.dark-skin .drawer-bar { background: rgba(100,30,0,.3); }
 }
 /* Drawer states push ferryman up */
 #ferryman.drawer-half { bottom: 360px; }
-#ferryman.drawer-full { bottom: 100vh; opacity: 0; } /* hide when fully open */
+#ferryman.drawer-full { bottom: 100vh; opacity: 0; }
 body.dark-skin #ferryman { display: block; }
+
+/* Mobile: bigger, less bleed so figure is visible */
+@media (max-width: 768px) {
+  #ferryman {
+    left: -6vw;
+    width: 95vw;
+    max-width: none;
+    bottom: 68px;
+  }
+  #ferryman.drawer-half { bottom: 360px; }
+}
+
+/* Voyage tab form */
+.voy-section-lbl {
+  font-size: 9px; font-weight: 700;
+  letter-spacing: .15em; text-transform: uppercase;
+  color: var(--muted); padding: 4px 0 10px;
+}
+.vform-row {
+  display: flex; gap: 10px; align-items: flex-start;
+}
+.vform-cell { display: flex; flex-direction: column; }
+.vform-cell .field-date { width: 120px; }
+.vform-cell .field-time { width: 82px; }
+
 </style>
 </head>
 <body>
@@ -774,71 +798,65 @@ body.dark-skin #ferryman { display: block; }
     <div class="tab-panel" id="tab-voyage">
       <div class="drawer-inner">
 
-    <!-- Manual Position -->
-    <div class="sec-lbl" id="sec-manual" onclick="toggleDrawerSec(this)">
-      Manual Position <span class="sec-arrow">▾</span>
-    </div>
-    <div class="sec-content" id="body-manual">
-      <div class="field">
-        <div class="field-label">Started at</div>
-        <div class="field-row">
-          <div class="ac-wrap" style="flex:1">
-            <input class="ac-inp" id="inp-start" placeholder="Dock, port, or location…" autocomplete="off">
-            <div class="ac-list" id="list-start"></div>
-          </div>
-          <div style="display:flex;flex-direction:column;gap:3px;flex-shrink:0">
-            <input type="date" id="date-start" class="field-date">
-            <input type="time" id="time-start" class="field-time" title="24hr format">
-            <div class="field-fmt">24hr</div>
-          </div>
-        </div>
-        <div class="field-coord" id="start-coord"></div>
-      </div>
-      <div class="field">
-        <div class="field-label">Currently at <span>(optional)</span></div>
-        <div class="ac-wrap">
-          <input class="ac-inp" id="inp-current" placeholder="e.g. New Hamburg…" autocomplete="off">
-          <div class="ac-list" id="list-current"></div>
-        </div>
-        <div class="field-coord" id="current-coord"></div>
-      </div>
-      <div class="field">
-        <div class="field-label">Heading to <span>(optional)</span></div>
-        <div class="ac-wrap">
-          <input class="ac-inp" id="inp-dest" placeholder="e.g. Albany Oil Terminal…" autocomplete="off">
-          <div class="ac-list" id="list-dest"></div>
-        </div>
-        <div class="field-coord" id="dest-coord"></div>
-      </div>
-      <button type="button" id="btn-manual-apply">Recalibrate ETA</button>
-      <div id="manual-result"></div>
-    </div>
-
-    <!-- Live AIS Report -->
-    <div class="sec-lbl" id="sec-ais" onclick="toggleDrawerSec(this)">
-      Live AIS Report <span class="sec-arrow">▾</span>
-    </div>
-    <div class="sec-content" id="body-ais">
-      <div id="ai-result"><div id="ai-text"></div></div>
-    </div>
-
-    <!-- Recent Voyages -->
-    <div class="sec-lbl" id="sec-voyages" onclick="toggleDrawerSec(this)">
-      Recent Voyages <span class="sec-arrow">▾</span>
-    </div>
-    <div class="sec-content" id="body-voyages">
-      <div id="route-list"></div>
-    </div>
-
-      <!-- Recent Voyages -->
-      <div class="sec-lbl" id="sec-voyages-inner" onclick="toggleDrawerSec(this)">
-        Recent Voyages <span class="sec-arrow">▾</span>
-      </div>
-      <div class="sec-content" id="body-voyages-inner">
+        <!-- Recent Voyages FIRST — most useful at a glance -->
+        <div class="voy-section-lbl">Recent Voyages</div>
         <div id="route-list"></div>
-      </div>
 
-    </div><!-- /drawer-inner voyage -->
+        <!-- Manual Position — collapsible, secondary -->
+        <div class="sec-lbl" id="sec-manual" onclick="toggleDrawerSec(this)" style="margin-top:8px">
+          Recalibrate Position <span class="sec-arrow">▾</span>
+        </div>
+        <div class="sec-content" id="body-manual">
+
+          <!-- Row 1: From + date/time inline -->
+          <div class="vform-row">
+            <div class="vform-cell" style="flex:2">
+              <div class="field-label">From</div>
+              <div class="ac-wrap">
+                <input class="ac-inp" id="inp-start" placeholder="Departure dock or port…" autocomplete="off">
+                <div class="ac-list" id="list-start"></div>
+              </div>
+              <div class="field-coord" id="start-coord"></div>
+            </div>
+            <div class="vform-cell" style="flex:0 0 auto">
+              <div class="field-label">Date</div>
+              <input type="date" id="date-start" class="field-date">
+            </div>
+            <div class="vform-cell" style="flex:0 0 auto">
+              <div class="field-label">Departed</div>
+              <input type="time" id="time-start" class="field-time" title="24hr format">
+              <div class="field-fmt">24hr</div>
+            </div>
+          </div>
+
+          <!-- Row 2: Current + Destination inline -->
+          <div class="vform-row" style="margin-top:8px">
+            <div class="vform-cell" style="flex:1">
+              <div class="field-label">Currently at <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></div>
+              <div class="ac-wrap">
+                <input class="ac-inp" id="inp-current" placeholder="e.g. New Hamburg…" autocomplete="off">
+                <div class="ac-list" id="list-current"></div>
+              </div>
+              <div class="field-coord" id="current-coord"></div>
+            </div>
+            <div class="vform-cell" style="flex:1">
+              <div class="field-label">Heading to <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></div>
+              <div class="ac-wrap">
+                <input class="ac-inp" id="inp-dest" placeholder="e.g. Albany Oil Terminal…" autocomplete="off">
+                <div class="ac-list" id="list-dest"></div>
+              </div>
+              <div class="field-coord" id="dest-coord"></div>
+            </div>
+          </div>
+
+          <div style="display:flex;align-items:center;gap:16px;margin-top:10px">
+            <button type="button" id="btn-manual-apply">Recalibrate ETA</button>
+            <div id="manual-result"></div>
+          </div>
+
+        </div><!-- /body-manual -->
+
+      </div><!-- /drawer-inner -->
     </div><!-- /tab-voyage -->
 
     <!-- LOG TAB -->
