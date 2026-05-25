@@ -795,7 +795,7 @@ body.dark-skin #btn-lightning {
 </style>
 </head>
 <body>
-<script>if(localStorage.getItem("skin")==="dark")document.body.classList.add("dark-skin");</script>
+<script>if(localStorage.getItem("skin")==="dark")document.body.classList.add("dark-skin");else{document.body.classList.remove("dark-skin");localStorage.removeItem("skin");}</script>
 
 <!-- Ferryman — Iron Maiden dark skin overlay -->
 <img id="ferryman"
@@ -2262,10 +2262,16 @@ function toggleSkin() {
 }
 // Restore saved skin on load
 (function() {
-  if (localStorage.getItem('skin') === 'dark') {
+  const savedSkin = localStorage.getItem('skin');
+  if (savedSkin === 'dark') {
     document.body.classList.add('dark-skin');
     const btn = document.getElementById('skin-toggle');
     if (btn) btn.textContent = 'Light Skin';
+  } else {
+    // Ensure light skin is default — remove any stale dark class
+    document.body.classList.remove('dark-skin');
+    const btn = document.getElementById('skin-toggle');
+    if (btn) btn.textContent = 'Iron Maiden';
   }
 })();
 
