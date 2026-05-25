@@ -2290,56 +2290,100 @@ document.getElementById('btn-manual-apply').addEventListener('click', async () =
 // ── Destination estimate ──────────────────────────────────────────────
 let destMarker = null, destLine = null;
 
+// Track all estimate lines so we can clear them
+let startLine = null, startMarker = null;
+
+function clearEstimateLines() {
+  if (destLine)   { map.removeLayer(destLine);   destLine   = null; }
+  if (startLine)  { map.removeLayer(startLine);  startLine  = null; }
+  if (destMarker) { map.removeLayer(destMarker); destMarker = null; }
+  if (startMarker){ map.removeLayer(startMarker);startMarker= null; }
+}
+
+function hudsonPathPts(fromLat, fromLng, toLat, toLng) {
+  const fromIdx = nearestHudsonIdx(fromLat, fromLng);
+  const toIdx   = nearestHudsonIdx(toLat,   toLng);
+  const pts = [[fromLat, fromLng]];
+  const step = toIdx > fromIdx ? 1 : -1;
+  let idx = fromIdx;
+  while (idx !== toIdx && idx+step >= 0 && idx+step < HUDSON.length) {
+    idx += step; pts.push(HUDSON[idx]);
+  }
+  pts.push([toLat, toLng]);
+  return pts;
+}
+
 function showDestinationEstimate() {
   if (!destCoords) return;
   const sog = lastFix.sog > 0.5 ? lastFix.sog : 7.0;
-  const fromLat = lastFix.lat || (startCoords ? startCoords.lat : null);
-  const fromLng = lastFix.lng || (startCoords ? startCoords.lng : null);
-  if (!fromLat) return;
 
-  // Distance along Hudson to destination
-  const fromIdx = nearestHudsonIdx(fromLat, fromLng);
-  const toIdx = nearestHudsonIdx(destCoords.lat, destCoords.lng);
+  // Current position (for remaining distance + ETA)
+  const curLat = lastFix.lat || (startCoords ? startCoords.lat : null);
+  const curLng = lastFix.lng || (startCoords ? startCoords.lng : null);
+  if (!curLat) return;
+
+  // Distance from current position to destination
+  const curIdx  = nearestHudsonIdx(curLat, curLng);
+  const toIdx   = nearestHudsonIdx(destCoords.lat, destCoords.lng);
   let distNm = 0;
-  for (let i = Math.min(fromIdx,toIdx); i < Math.max(fromIdx,toIdx); i++) {
+  for (let i = Math.min(curIdx,toIdx); i < Math.max(curIdx,toIdx); i++) {
     const a = HUDSON[i], b = HUDSON[i+1];
     distNm += Math.sqrt((b[0]-a[0])**2+(b[1]-a[1])**2)*60;
   }
-  const etaHrs = distNm / sog;
+  const etaHrs  = distNm / sog;
   const etaTime = new Date(Date.now() + etaHrs * 3600000);
-  const etaStr = etaTime.toLocaleString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+  const etaStr  = etaTime.toLocaleString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
 
-  // Draw destination marker
-  if (destMarker) map.removeLayer(destMarker);
+  // Clear old lines
+  clearEstimateLines();
+
+  // ── COMPLETED LEG: start → current (solid dim line) ──────────────
+  if (startCoords && startCoords.lat) {
+    const completedPts = hudsonPathPts(startCoords.lat, startCoords.lng, curLat, curLng);
+    startLine = L.polyline(completedPts, {
+      color: '#18c37e', weight: 2, opacity: .35, dashArray: '4,4'
+    }).addTo(map);
+
+    // Start marker — small anchor dot
+    startMarker = L.marker([startCoords.lat, startCoords.lng], {
+      icon: L.divIcon({
+        className: '',
+        iconSize: [20, 20], iconAnchor: [10, 10],
+        html: `<div style="width:14px;height:14px;border-radius:50%;
+          background:#18c37e;opacity:.6;border:2px solid white;margin:3px;
+          box-shadow:0 1px 4px rgba(0,0,0,.3)"></div>`
+      }),
+      interactive: false, zIndexOffset: 600
+    }).addTo(map);
+  }
+
+  // ── REMAINING LEG: current → destination (brighter dashed line) ──
+  const remainPts = hudsonPathPts(curLat, curLng, destCoords.lat, destCoords.lng);
+  destLine = L.polyline(remainPts, {
+    color: '#18c37e', weight: 2.5, opacity: .65, dashArray: '8,5'
+  }).addTo(map);
+
+  // Destination marker
+  const destName = destCoords.name || document.getElementById('inp-dest').value;
   destMarker = L.marker([destCoords.lat, destCoords.lng], {
     icon: L.divIcon({
       className: '',
-      iconSize: [30, 30],
-      iconAnchor: [15, 15],
-      html: `<div style="width:30px;height:30px;background:#18c37e;border:2px solid white;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;box-shadow:0 2px 6px rgba(0,0,0,.2)">🏁</div>`
+      iconSize: [30, 30], iconAnchor: [15, 15],
+      html: `<div style="width:30px;height:30px;background:#18c37e;border:2px solid white;
+        border-radius:50%;display:flex;align-items:center;justify-content:center;
+        font-size:14px;box-shadow:0 2px 6px rgba(0,0,0,.2)">🏁</div>`
     }),
     zIndexOffset: 800
   }).addTo(map);
   destMarker.bindPopup(`<div style="font-family:Inter,sans-serif;min-width:180px">
-    <b style="font-size:13px">🏁 Destination: ${destCoords.name || document.getElementById('inp-dest').value}</b>
+    <b style="font-size:13px">Destination: ${destName}</b>
     <div style="font-size:11px;color:#888;margin-top:5px;line-height:1.7">
-      Distance: <b>${distNm.toFixed(1)} nm</b> from current position<br>
+      Remaining: <b>${distNm.toFixed(1)} nm</b><br>
       Speed: <b>${sog.toFixed(1)} kn</b><br>
       ETA: <b style="color:#18c37e">${etaStr}</b>
     </div>
-  </div>`, {closeButton: false});
+  </div>`, {closeButton:false});
   destMarker.openPopup();
-
-  // Draw dashed route line to destination
-  if (destLine) map.removeLayer(destLine);
-  const routePts = [[fromLat, fromLng]];
-  const step = toIdx > fromIdx ? 1 : -1;
-  let idx = fromIdx;
-  while (idx !== toIdx && idx+step >= 0 && idx+step < HUDSON.length) {
-    idx += step; routePts.push(HUDSON[idx]);
-  }
-  routePts.push([destCoords.lat, destCoords.lng]);
-  destLine = L.polyline(routePts, {color:'#18c37e', weight:2.5, opacity:.5, dashArray:'8,5'}).addTo(map);
 
   // Update ETA in Current Status
   document.getElementById('v-eta').textContent = etaStr;
