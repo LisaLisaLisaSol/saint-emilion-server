@@ -1066,12 +1066,79 @@ const DOCKS = [
   {name:'Sprague Energy Rensselaer',      lat:42.6480, lng:-73.7350},
   {name:'Port of Coeymans',              lat:42.4842, lng:-73.7906},
 ];
-DOCKS.forEach(d=>{
-  L.marker([d.lat,d.lng],{icon:L.divIcon({
-    html:`<div style="background:rgba(255,255,255,.88);border:1px solid rgba(245,166,35,.5);border-radius:8px;padding:2px 7px;font-size:10px;font-weight:600;color:#c07800;white-space:nowrap;font-family:Inter,sans-serif;box-shadow:0 1px 4px rgba(0,0,0,.1)">⚓ ${d.name}</div>`,
-    className:'',iconAnchor:[0,10]
-  })}).addTo(map);
-});
+// ── Smart dock markers — only shown when relevant ─────────────────────
+const dockMarkers = {}; // keyed by dock name
+
+function dockIcon(name, isDark) {
+  const color = isDark ? '#c8a040' : '#c07800';
+  const shadow = isDark
+    ? 'text-shadow:0 0 8px rgba(200,100,0,.6)'
+    : 'text-shadow:0 1px 3px rgba(0,0,0,.2)';
+  return L.divIcon({
+    className: '',
+    iconAnchor: [12, 8],
+    html: `<div style="display:flex;flex-direction:column;align-items:center;pointer-events:none">
+      <span style="font-size:14px;line-height:1;${shadow}">⚓</span>
+      <span style="font-size:9px;font-weight:700;color:${color};white-space:nowrap;
+        font-family:'DM Sans',sans-serif;letter-spacing:.03em;margin-top:2px;
+        text-shadow:0 1px 3px rgba(0,0,0,.5)">${name}</span>
+    </div>`
+  });
+}
+
+function showDockMarker(dock) {
+  if (dockMarkers[dock.name]) return; // already showing
+  const isDark = document.body.classList.contains('dark-skin');
+  const m = L.marker([dock.lat, dock.lng], {
+    icon: dockIcon(dock.name, isDark),
+    zIndexOffset: 200,
+    interactive: false
+  }).addTo(map);
+  dockMarkers[dock.name] = m;
+}
+
+function hideDockMarker(name) {
+  if (dockMarkers[name]) {
+    map.removeLayer(dockMarkers[name]);
+    delete dockMarkers[name];
+  }
+}
+
+function hideAllDockMarkers() {
+  Object.keys(dockMarkers).forEach(name => {
+    map.removeLayer(dockMarkers[name]);
+    delete dockMarkers[name];
+  });
+}
+
+function refreshDockIconTheme() {
+  // Re-render all visible dock markers with correct theme color
+  const showing = Object.keys(dockMarkers).map(name => {
+    const m = dockMarkers[name];
+    const dock = DOCKS.find(d => d.name === name);
+    return dock;
+  }).filter(Boolean);
+  hideAllDockMarkers();
+  showing.forEach(dock => showDockMarker(dock));
+}
+
+// Check if vessel is near any dock (~0.5nm threshold)
+function checkNearbyDocks(lat, lng) {
+  hideAllDockMarkers();
+  DOCKS.forEach(dock => {
+    const distNm = Math.sqrt(
+      (dock.lat - lat) ** 2 + (dock.lng - lng) ** 2
+    ) * 60;
+    if (distNm < 0.6) showDockMarker(dock);
+  });
+}
+
+// Show docks for an active voyage (start + dest + any close to route)
+function showVoyageDocks(startDock, destDock) {
+  hideAllDockMarkers();
+  if (startDock) showDockMarker(startDock);
+  if (destDock)  showDockMarker(destDock);
+}
 
 // ── Routes ────────────────────────────────────────────────────────────
 const ROUTES = [
@@ -1221,6 +1288,9 @@ function placeSaint(lat, lng, cog, sog, nav, apiTs, isStale){
 
   // Start dead reckoning from this fix
   startDeadReckoning();
+
+  // Show dock marker if vessel is near one
+  if (!isStale) checkNearbyDocks(lat, lng);
 }
 
 // ── AI Fetch ──────────────────────────────────────────────────────────
@@ -1840,6 +1910,8 @@ function snapToRiver(loc) {
 setupAutocomplete('inp-start',   'list-start',   'start-coord',   (loc) => {
   startCoords = snapToRiver(loc);
   if (startCoords.snapped) document.getElementById('start-coord').textContent += ' (snapped to river)';
+  // Show start dock on map
+  showDockMarker({name: loc.name, lat: startCoords.lat, lng: startCoords.lng});
 });
 setupAutocomplete('inp-current', 'list-current', 'current-coord', (loc) => {
   currentCoords = snapToRiver(loc);
@@ -1848,7 +1920,11 @@ setupAutocomplete('inp-current', 'list-current', 'current-coord', (loc) => {
 setupAutocomplete('inp-dest',    'list-dest',    'dest-coord',    (loc) => {
   destCoords = snapToRiver(loc);
   if (destCoords.snapped) document.getElementById('dest-coord').textContent += ' (snapped to river)';
-  if (destCoords) showDestinationEstimate();
+  if (destCoords) {
+    showDestinationEstimate();
+    // Show dest dock marker on map immediately
+    showDockMarker({name: loc.name, lat: destCoords.lat, lng: destCoords.lng});
+  }
 });
 
 // Geocode a text location using Nominatim
@@ -1894,6 +1970,14 @@ document.getElementById('btn-manual-apply').addEventListener('click', async () =
   voyageTrack = [[startLat, startLng]];
   estPositions = [];
   lastEstLat = null; lastEstLng = null;
+
+  // Show dock markers for this voyage
+  const startDock = DOCKS.find(d => d.name === (startCoords.name || document.getElementById('inp-start').value));
+  const destDockObj = destCoords ? DOCKS.find(d => d.name === (destCoords.name || document.getElementById('inp-dest').value)) : null;
+  showVoyageDocks(
+    startDock || {name: startCoords.name || document.getElementById('inp-start').value, lat: startLat, lng: startLng},
+    destDockObj || (destCoords ? {name: destCoords.name || '', lat: destCoords.lat, lng: destCoords.lng} : null)
+  );
 
   // Place start marker
   if (voyageStartMarker) map.removeLayer(voyageStartMarker);
@@ -2135,11 +2219,13 @@ function toggleSkin() {
   if (ferryman) {
     if (isDark) {
       setTimeout(() => ferryman.classList.add('visible'), 100);
-      setTimeout(() => strikeLightning(), 700); // lightning after ferryman fades in
+      setTimeout(() => strikeLightning(), 700);
     } else {
       ferryman.classList.remove('visible');
     }
   }
+  // Refresh dock marker colors for new theme
+  setTimeout(refreshDockIconTheme, 50);
   // Switch Leaflet tile layer
   if (isDark && darkTiles && !map.hasLayer(darkTiles)) {
     map.removeLayer(lightTiles);
