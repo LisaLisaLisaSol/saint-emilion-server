@@ -2542,9 +2542,9 @@ function positionVesselCard() {
   if (!saintMarker) return;
   const card = document.getElementById('vessel-card');
   const pt = map.latLngToContainerPoint(saintMarker.getLatLng());
-  card.style.left = (pt.x - 87) + 'px';
-  card.style.top  = (pt.y + 32) + 'px';
-  // Don't auto-show — only shown on marker click
+  // Center card horizontally on marker, appear below it
+  card.style.left = Math.max(10, Math.min(window.innerWidth - 210, pt.x - 100)) + 'px';
+  card.style.top  = (pt.y + 38) + 'px';
 }
 // Update card on map move/zoom
 if (typeof map !== 'undefined') {
@@ -2586,6 +2586,7 @@ placeSaint = function(lat, lng, cog, sog, nav, apiTs, isStale) {
   const fixLabel = isStale ? 'Last known' : 'Live · just now';
   updateLiveUI(sog, cog, nav, isStale, fixLabel);
   positionVesselCard();
+  attachMarkerClickHandler(); // ensure click handler is always attached
 };
 
 // ── Remove draggable divider (not used in new layout) ─────────────────
@@ -2925,6 +2926,8 @@ function toggleVesselCard(show) {
   } else {
     card.classList.toggle('on', show);
   }
+  // Always reposition when showing
+  if (card.classList.contains('on')) positionVesselCard();
 }
 
 // Click marker to show card, click card to dismiss
