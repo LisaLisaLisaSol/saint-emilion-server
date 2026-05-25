@@ -616,8 +616,8 @@ body.dark-skin .drawer-bar { background: rgba(100,30,0,.3); }
 #ferryman {
   position: fixed;
   bottom: 0;
-  left: -16vw;            /* bleed further left — arm dramatically reaches into map */
-  width: 78vw;
+  left: -4vw;             /* tightly cropped image — minimal bleed */
+  width: 65vw;
   max-width: 980px;
   min-width: 380px;
   z-index: 710;
@@ -638,20 +638,19 @@ body.dark-skin #ferryman { display: block; }
 /* Mobile: fill left side, pushed hard left so arm points at map */
 @media (max-width: 768px) {
   #ferryman {
-    left: -32vw;          /* as far left as possible — just arm + torso visible */
-    width: 105vw;         /* narrower apparent width via left offset */
+    left: -8vw;           /* tight crop image — less bleed needed */
+    width: 72vw;          /* fills left ~2/3 of screen */
     max-width: none;
     bottom: 68px;
-    /* squish horizontally, stretch vertically for tall skinny look */
     transform-origin: bottom left;
-    transform: scaleX(0.72) scaleY(1.18);
+    transform: scaleY(1.1); /* slight vertical stretch only */
   }
   #ferryman.visible {
     opacity: .95;
   }
   #ferryman.drawer-half {
     bottom: 360px;
-    transform: scaleX(0.72) scaleY(1.18);
+    transform: scaleY(1.1);
   }
   #ferryman.rumble {
     animation: ferryman-rumble-mobile 1.5s ease-out;
@@ -659,16 +658,16 @@ body.dark-skin #ferryman { display: block; }
 }
 
 @keyframes ferryman-rumble-mobile {
-  0%       { transform: scaleX(0.72) scaleY(1.18) translateX(0); }
-  5%       { transform: scaleX(0.72) scaleY(1.18) translateX(-6px); }
-  10%      { transform: scaleX(0.72) scaleY(1.18) translateX(8px); }
-  20%      { transform: scaleX(0.72) scaleY(1.18) translateX(-7px); }
-  30%      { transform: scaleX(0.72) scaleY(1.18) translateX(6px); }
-  40%      { transform: scaleX(0.72) scaleY(1.18) translateX(-5px); }
-  55%      { transform: scaleX(0.72) scaleY(1.18) translateX(4px); }
-  70%      { transform: scaleX(0.72) scaleY(1.18) translateX(-2px); }
-  85%      { transform: scaleX(0.72) scaleY(1.18) translateX(1px); }
-  100%     { transform: scaleX(0.72) scaleY(1.18) translateX(0); }
+  0%       { transform: scaleY(1.1) translateX(0); }
+  5%       { transform: scaleY(1.1) translateX(-6px); }
+  10%      { transform: scaleY(1.1) translateX(8px); }
+  20%      { transform: scaleY(1.1) translateX(-7px); }
+  30%      { transform: scaleY(1.1) translateX(6px); }
+  40%      { transform: scaleY(1.1) translateX(-5px); }
+  55%      { transform: scaleY(1.1) translateX(4px); }
+  70%      { transform: scaleY(1.1) translateX(-2px); }
+  85%      { transform: scaleY(1.1) translateX(1px); }
+  100%     { transform: scaleY(1.1) translateX(0); }
 }
 
 /* Voyage tab form */
@@ -1091,56 +1090,17 @@ body.dark-skin #btn-lightning {
     <!-- VOYAGE TAB -->
     <div class="tab-panel" id="tab-voyage">
       <div class="drawer-inner">
-        <div id="voyage-columns">
+        <!-- Voyages only — ETA lives in ETA tab -->
+        <!-- Keep hidden inputs for JS compat -->
+        <div style="display:none">
+          <input id="inp-dest"><div id="list-dest"></div><div id="dest-coord"></div>
+          <input id="inp-start"><div id="list-start"></div><div id="start-coord"></div>
+          <input id="inp-current"><div id="list-current"></div><div id="current-coord"></div>
+          <input id="date-start" type="date"><input id="time-start" type="time">
+          <button id="btn-manual-apply"></button><div id="manual-result"></div>
+        </div>
 
-          <!-- LEFT: ETA estimator -->
-          <div id="voyage-col-left">
-            <div class="voy-section-lbl">Estimate ETA</div>
-
-            <div class="field" style="margin-bottom:8px">
-              <div class="field-label">Heading to</div>
-              <div class="ac-wrap">
-                <input class="ac-inp" id="inp-dest" placeholder="e.g. Yonkers, Albany…" autocomplete="off">
-                <div class="ac-list" id="list-dest"></div>
-              </div>
-              <div class="field-coord" id="dest-coord"></div>
-            </div>
-
-            <div class="field" style="margin-bottom:8px">
-              <div class="field-label">Started from <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></div>
-              <div class="vform-row">
-                <div class="ac-wrap" style="flex:1">
-                  <input class="ac-inp" id="inp-start" placeholder="Departure dock or port…" autocomplete="off">
-                  <div class="ac-list" id="list-start"></div>
-                </div>
-                <input type="date" id="date-start" class="field-date" style="flex-shrink:0">
-                <input type="time" id="time-start" class="field-time" style="flex-shrink:0" title="24hr">
-              </div>
-              <div class="field-coord" id="start-coord"></div>
-            </div>
-
-            <div class="field" style="margin-bottom:8px">
-              <div class="field-label">Currently at <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></div>
-              <div class="ac-wrap">
-                <input class="ac-inp" id="inp-current" placeholder="e.g. New Hamburg…" autocomplete="off">
-                <div class="ac-list" id="list-current"></div>
-              </div>
-              <div class="field-coord" id="current-coord"></div>
-            </div>
-
-            <div style="display:flex;align-items:center;gap:12px;margin-top:8px">
-              <button type="button" id="btn-manual-apply">Calculate ETA</button>
-              <div id="manual-result"></div>
-            </div>
-          </div>
-
-          <!-- RIGHT: Saved voyages -->
-          <div id="voyage-col-right">
-            <div class="voy-section-lbl">Voyages</div>
-            <div id="route-list"></div>
-          </div>
-
-        </div><!-- /voyage-columns -->
+        <div id="route-list"></div>
       </div><!-- /drawer-inner -->
     </div><!-- /tab-voyage -->
 
