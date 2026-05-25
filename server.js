@@ -497,17 +497,24 @@ async function fetchVoyageHistory() {
     let mooredCount = 0;
 
     const HUDSON_PORTS = [
-      {name:'Albany Oil Terminal', lat:42.6512, lng:-73.7550},
+      {name:'Albany', lat:42.6512, lng:-73.7550},
+      {name:'Albany Oil Terminal', lat:42.6400, lng:-73.7500},
+      {name:'Kingston', lat:41.9230, lng:-73.9750},
+      {name:'Poughkeepsie', lat:41.7200, lng:-73.9500},
+      {name:'New Hamburg', lat:41.5800, lng:-73.9700},
+      {name:'Newburgh', lat:41.5030, lng:-74.0080},
+      {name:'Haverstraw Bay', lat:41.2100, lng:-73.9500},
+      {name:'Yonkers', lat:40.9472, lng:-73.9096},
       {name:'Yonkers Anchorage', lat:40.9340, lng:-73.8950},
-      {name:'Bayonne Terminal', lat:40.6574, lng:-74.1130},
-      {name:'Gowanus Bay Terminal', lat:40.6520, lng:-74.0170},
-      {name:'Phillips 66 Linden Terminal', lat:40.6200, lng:-74.2300},
-      {name:'Port Imperial Weehawken', lat:40.7680, lng:-74.0200},
+      {name:'Hastings-on-Hudson', lat:40.9900, lng:-73.8800},
       {name:'GW Bridge Anchorage', lat:40.8510, lng:-73.9520},
-      {name:'Haverstraw Bay Anchorage', lat:41.2100, lng:-73.9500},
-      {name:'Kingston Oil Dock', lat:41.9230, lng:-73.9750},
-      {name:'New Hamburg Dock', lat:41.5800, lng:-73.9700},
-      {name:'Newburgh Waterfront', lat:41.5030, lng:-74.0080},
+      {name:'Port Imperial Weehawken', lat:40.7680, lng:-74.0200},
+      {name:'Bayonne', lat:40.6574, lng:-74.1130},
+      {name:'Gowanus Bay', lat:40.6520, lng:-74.0170},
+      {name:'Phillips 66 Linden', lat:40.6200, lng:-74.2300},
+      {name:'Phillips 66 Tremley Point', lat:40.5900, lng:-74.2100},
+      {name:'Perth Amboy', lat:40.5030, lng:-74.2750},
+      {name:'Rossville', lat:40.5500, lng:-74.2400},
     ];
 
     function nearestPort(lat, lng) {
@@ -516,7 +523,9 @@ async function fetchVoyageHistory() {
         const d = Math.sqrt((p.lat-lat)**2+(p.lng-lng)**2)*60;
         if (d < bestDist) { bestDist = d; best = p; }
       });
-      return bestDist < 5 ? best : null; // within 5nm
+      // Always return best match with distance label if too far
+      if (bestDist < 8) return best;
+      return {name: lat.toFixed(2) + 'N/' + Math.abs(lng).toFixed(2) + 'W'};
     }
 
     for (let i = 0; i < positions.length; i++) {
@@ -559,7 +568,7 @@ async function fetchVoyageHistory() {
             const startDate = new Date(currentVoyage.startTs);
             const endDate = new Date(currentVoyage.endTs || ts);
             voyages.push({
-              name: `${currentVoyage.startPort?.name || 'Unknown'} → ${endPort?.name || 'Unknown'}`,
+              name: `${currentVoyage.startPort?.name || currentVoyage.startLat.toFixed(2)+'N'} → ${endPort?.name || (currentVoyage.endLat||lat).toFixed(2)+'N'}`,
               startPort: currentVoyage.startPort?.name || 'Unknown',
               endPort: endPort?.name || 'Unknown',
               startTs: currentVoyage.startTs,
