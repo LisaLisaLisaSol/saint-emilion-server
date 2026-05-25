@@ -3479,7 +3479,8 @@ fixEstimateButton();
 setTimeout(() => {
   fetchVoyageConfirmation();
   setupETAAutocomplete();
-}, 2000); // small delay so map + DOCKS are ready
+  fetchVoyageHistory(); // load confirmed voyage history
+}, 2000);
 
 // Redraw ETA lines on position update
 const _origPlaceSaintETA = placeSaint;
@@ -3487,8 +3488,97 @@ placeSaint = function(lat, lng, cog, sog, nav, apiTs, isStale) {
   _origPlaceSaintETA(lat, lng, cog, sog, nav, apiTs, isStale);
   if (etaState.toLat && !isStale) {
     computeAndDisplayETA();
+    checkETAArrival(lat, lng, sog); // auto-clear ETA when arrived
   }
 };
+
+
+// ── Fetch confirmed voyage history from server ────────────────────────
+async function fetchVoyageHistory() {
+  try {
+    const r = await fetch('https://saint-emilion-server.onrender.com/history');
+    if (!r.ok) return;
+    const voyages = await r.json();
+    if (!Array.isArray(voyages) || !voyages.length) return;
+
+    console.log(`Loaded ${voyages.length} voyages from API`);
+
+    // Merge with existing ROUTES — API data takes priority, dedupe by name+date
+    const existing = new Set(ROUTES.map(r => r.name + r.date));
+    voyages.forEach(v => {
+      const key = v.name + v.date;
+      if (!existing.has(key)) {
+        ROUTES.unshift({
+          name: v.name,
+          date: v.date + (v.dateEnd && v.dateEnd !== v.date ? '–' + v.dateEnd : '') +
+                (v.distNm ? ' · ' + v.distNm + ' nm' : '') +
+                (v.avgSpeed ? ' · ' + v.avgSpeed + ' kn avg' : ''),
+          color: v.live ? '#16a050' : '#0095b0',
+          track: v.track || [],
+          live: v.live || false,
+          confirmed: true
+        });
+        existing.add(key);
+      }
+    });
+
+    // Save merged list
+    localStorage.setItem('saved_voyages', JSON.stringify(ROUTES.slice(0,10)));
+    renderRoutes();
+  } catch(e) {
+    console.log('Voyage history fetch failed:', e.message);
+  }
+}
+
+// ── Auto-clear ETA when vessel arrives ───────────────────────────────
+function checkETAArrival(lat, lng, sog) {
+  if (!etaState.toLat || !etaState.toName) return;
+  if (sog > 0.5) return; // still moving
+
+  // Check if within 1nm of destination
+  const distToDestNm = Math.sqrt(
+    (lat - etaState.toLat)**2 + (lng - etaState.toLng)**2
+  ) * 60;
+
+  if (distToDestNm < 1.5) {
+    console.log('Vessel arrived at destination — clearing ETA');
+    log(`Arrived at ${etaState.toName}`);
+
+    // Save completed voyage before clearing
+    const completed = {
+      id: Date.now(),
+      route: `${etaState.fromName || '?'} → ${etaState.toName}`,
+      etaStr: 'Arrived ' + new Date().toLocaleString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}),
+      distRem: '0',
+      sog: '0',
+      savedAt: new Date().toLocaleTimeString(),
+      speedType: 'completed',
+      arrived: true
+    };
+    savedETAs.unshift(completed);
+    savedETAs = savedETAs.slice(0,5);
+    localStorage.setItem('se_saved_etas', JSON.stringify(savedETAs));
+
+    // Clear active voyage state
+    etaState.toName = ''; etaState.toLat = null; etaState.toLng = null;
+    etaState.fromName = ''; etaState.fromLat = null; etaState.fromLng = null;
+    etaState.departedAt = null; etaState.avgSpeed = null;
+    saveETAState();
+
+    // Clear map lines
+    if (destLine)   { map.removeLayer(destLine);   destLine   = null; }
+    if (destMarker) { map.removeLayer(destMarker); destMarker = null; }
+    if (startLine)  { map.removeLayer(startLine);  startLine  = null; }
+    if (startMarker){ map.removeLayer(startMarker);startMarker= null; }
+
+    // Update ETA tab display
+    document.getElementById('eta-time-big').textContent = 'Arrived';
+    document.getElementById('eta-dist-big').textContent = '0 nm';
+    document.getElementById('eta-route-label').textContent = `Arrived at ${completed.etaStr.replace('Arrived ','')}`;
+    document.getElementById('eta-confidence').textContent = '';
+    renderSavedETAs();
+  }
+}
 
 </script>
 </body>
