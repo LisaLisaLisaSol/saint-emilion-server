@@ -1391,29 +1391,20 @@ function showVoyageDocks(startDock, destDock) {
 }
 
 // ── Routes ────────────────────────────────────────────────────────────
-const ROUTES = [
-  {
-    name:'Bayonne → Albany', date:'May 21–22, 2026', color:'#0a6eff',
-    track:[
-      [40.6574,-74.1130],[40.6520,-74.0170],[40.7680,-74.0050],
-      [40.8510,-73.9520],[40.9340,-73.9150],[41.0600,-73.9100],
-      [41.2900,-73.9600],[41.5030,-74.0080],[41.9230,-73.9750],
-      [42.3500,-73.8800],[42.6400,-73.7500]
-    ]
-  },
-  {
-    name:'Albany → Gowanus', date:'May 18–19, 2026', color:'#9b5de5',
-    track:[
-      [42.6400,-73.7500],[41.9230,-73.9750],[41.5030,-74.0080],
-      [40.9340,-73.9150],[40.8510,-73.9520],[40.7680,-74.0050],
-      [40.6520,-74.0170]
-    ]
-  },
-  {
-    name:'Gowanus → Bayonne', date:'May 15, 2026', color:'#f15bb5',
-    track:[[40.6520,-74.0170],[40.6400,-74.0800],[40.6574,-74.1130]]
-  }
-];
+// ROUTES populated from API + localStorage — no dummy data
+let ROUTES = [];
+
+// Load any saved voyages from localStorage on startup
+(function() {
+  try {
+    const saved = localStorage.getItem('saved_voyages');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      // Only load non-dummy entries (confirmed or have real track data)
+      ROUTES = parsed.filter(r => r.confirmed || (r.track && r.track.length > 3));
+    }
+  } catch(e) {}
+})();
 
 // ── Vessel icon ───────────────────────────────────────────────────────
 function tugIcon(color, size, label){
@@ -1961,8 +1952,8 @@ function renderRoutes(){
   // ── Historical voyages ────────────────────────────────────────────
   if(!ROUTES.length) {
     const empty = document.createElement('div');
-    empty.style.cssText = 'font-size:11px;color:var(--muted);padding:6px 0';
-    empty.textContent = 'No saved voyages yet.';
+    empty.style.cssText = 'font-size:11px;color:var(--muted);padding:6px 0;line-height:1.6';
+    empty.innerHTML = 'Loading voyage history…<br><span style="font-size:9px;opacity:.6">Fetching from AIS records</span>';
     wrap.appendChild(empty);
     return;
   }
@@ -3496,10 +3487,26 @@ placeSaint = function(lat, lng, cog, sog, nav, apiTs, isStale) {
 // ── Fetch confirmed voyage history from server ────────────────────────
 async function fetchVoyageHistory() {
   try {
+    console.log('Fetching voyage history from /history...');
     const r = await fetch('https://saint-emilion-server.onrender.com/history');
-    if (!r.ok) return;
+    if (!r.ok) {
+      console.log('History fetch failed:', r.status);
+      // Show error in voyage list
+      const wrap = document.getElementById('route-list');
+      if (wrap && !ROUTES.length) {
+        wrap.innerHTML = '<div style="font-size:10px;color:var(--muted)">Could not load voyage history (server error ' + r.status + ')</div>';
+      }
+      return;
+    }
     const voyages = await r.json();
-    if (!Array.isArray(voyages) || !voyages.length) return;
+    console.log('History response:', voyages);
+    if (!Array.isArray(voyages) || !voyages.length) {
+      const wrap = document.getElementById('route-list');
+      if (wrap && !ROUTES.length) {
+        wrap.innerHTML = '<div style="font-size:10px;color:var(--muted)">No voyage history found yet</div>';
+      }
+      return;
+    }
 
     console.log(`Loaded ${voyages.length} voyages from API`);
 
@@ -3513,7 +3520,7 @@ async function fetchVoyageHistory() {
           date: v.date + (v.dateEnd && v.dateEnd !== v.date ? '–' + v.dateEnd : '') +
                 (v.distNm ? ' · ' + v.distNm + ' nm' : '') +
                 (v.avgSpeed ? ' · ' + v.avgSpeed + ' kn avg' : ''),
-          color: v.live ? '#16a050' : '#0095b0',
+          color: v.live ? '#16a050' : ['#0095b0','#9b5de5','#f15bb5','#ff9f1c','#2ec4b6'][ROUTES.length % 5],
           track: v.track || [],
           live: v.live || false,
           confirmed: true
