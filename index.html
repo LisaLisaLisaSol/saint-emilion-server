@@ -637,12 +637,37 @@ body.dark-skin #ferryman { display: block; }
 /* Mobile: fill left side, pushed hard left so arm points at map */
 @media (max-width: 768px) {
   #ferryman {
-    left: -20vw;
-    width: 115vw;
+    left: -32vw;          /* as far left as possible — just arm + torso visible */
+    width: 105vw;         /* narrower apparent width via left offset */
     max-width: none;
     bottom: 68px;
+    /* squish horizontally, stretch vertically for tall skinny look */
+    transform-origin: bottom left;
+    transform: scaleX(0.72) scaleY(1.18);
   }
-  #ferryman.drawer-half { bottom: 360px; }
+  #ferryman.visible {
+    opacity: .95;
+  }
+  #ferryman.drawer-half {
+    bottom: 360px;
+    transform: scaleX(0.72) scaleY(1.18);
+  }
+  #ferryman.rumble {
+    animation: ferryman-rumble-mobile 1.5s ease-out;
+  }
+}
+
+@keyframes ferryman-rumble-mobile {
+  0%       { transform: scaleX(0.72) scaleY(1.18) translateX(0); }
+  5%       { transform: scaleX(0.72) scaleY(1.18) translateX(-6px); }
+  10%      { transform: scaleX(0.72) scaleY(1.18) translateX(8px); }
+  20%      { transform: scaleX(0.72) scaleY(1.18) translateX(-7px); }
+  30%      { transform: scaleX(0.72) scaleY(1.18) translateX(6px); }
+  40%      { transform: scaleX(0.72) scaleY(1.18) translateX(-5px); }
+  55%      { transform: scaleX(0.72) scaleY(1.18) translateX(4px); }
+  70%      { transform: scaleX(0.72) scaleY(1.18) translateX(-2px); }
+  85%      { transform: scaleX(0.72) scaleY(1.18) translateX(1px); }
+  100%     { transform: scaleX(0.72) scaleY(1.18) translateX(0); }
 }
 
 /* Voyage tab form */
