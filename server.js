@@ -123,7 +123,7 @@ async function fetchMyShipTrackingAPI() {
       lng:      parseFloat(v.lng),
       sog:      parseFloat(v.speed || 0),
       cog:      parseFloat(v.course || 0),
-      nav:      typeof v.nav_status === 'number' ? (NAV_STATUS[v.nav_status] || 'Unknown') : (v.nav_status || 'Unknown'),
+      nav:      parseNavStatus(v.nav_status),
       location: `${parseFloat(v.lat).toFixed(4)}°N ${Math.abs(parseFloat(v.lng)).toFixed(4)}°W`,
       updated:  v.received || new Date().toISOString(),
       ts:       Date.now(),
@@ -268,6 +268,25 @@ async function fetchVesselAPI() {
   }
 }
 
+// ── Nav status normalizer ────────────────────────────────────────────────────
+function parseNavStatus(raw) {
+  if (raw === null || raw === undefined) return 'Unknown';
+  if (typeof raw === 'number') return NAV_STATUS[raw] || 'Unknown';
+  // MyShipTracking returns strings like "Under way using engine", "Moored", etc.
+  const s = String(raw).toLowerCase();
+  if (s.includes('under way') || s.includes('underway') || s.includes('engine')) return 'Underway';
+  if (s.includes('anchor')) return 'At Anchor';
+  if (s.includes('moor')) return 'Moored';
+  if (s.includes('fishing')) return 'Fishing';
+  if (s.includes('sailing')) return 'Sailing';
+  if (s.includes('not under command')) return 'Not Under Command';
+  if (s.includes('restricted')) return 'Restricted';
+  if (s.includes('pushing') || s.includes('towing') || s.includes('aground')) return 'Underway';
+  if (s === '0') return 'Underway';
+  // If it's a readable string just return it trimmed
+  return raw.length < 30 ? raw : 'Underway';
+}
+
 // ── HTTP helper ───────────────────────────────────────────────────────────────
 function httpGet(url, headers = {}) {
   return new Promise((resolve, reject) => {
@@ -365,3 +384,4 @@ httpServer.listen(PORT, () => {
   console.log('API active:      ', apiIsActive() ? 'YES' : 'NO — using scrape');
   connectAisstream();
 });
+
