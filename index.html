@@ -649,6 +649,97 @@ body.dark-skin #ferryman { display: block; }
 .vform-cell .field-date { width: 120px; }
 .vform-cell .field-time { width: 82px; }
 
+
+/* ── Lightning effect ── */
+#lightning-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
+  opacity: 0;
+  background: radial-gradient(ellipse at 60% 20%, #e8f4ff 0%, #b8d8ff 30%, #ffffff 60%);
+  mix-blend-mode: screen;
+}
+
+/* SVG bolt that slashes across the sky */
+#lightning-bolt {
+  position: fixed;
+  top: 0; left: 0;
+  width: 100vw; height: 60vh;
+  z-index: 10000;
+  pointer-events: none;
+  opacity: 0;
+}
+
+@keyframes lightning-flash {
+  0%   { opacity: 0; }
+  4%   { opacity: .95; }
+  8%   { opacity: .1; }
+  13%  { opacity: .85; }
+  18%  { opacity: 0; }
+  52%  { opacity: 0; }
+  55%  { opacity: .6; }
+  58%  { opacity: 0; }
+  100% { opacity: 0; }
+}
+
+@keyframes bolt-flash {
+  0%   { opacity: 0; }
+  4%   { opacity: 1; }
+  10%  { opacity: 0; }
+  13%  { opacity: .8; }
+  18%  { opacity: 0; }
+  100% { opacity: 0; }
+}
+
+@keyframes ferryman-rumble {
+  0%,100% { transform: translateX(0) rotate(0deg); }
+  10%      { transform: translateX(-4px) rotate(-.4deg); }
+  20%      { transform: translateX(5px) rotate(.3deg); }
+  30%      { transform: translateX(-3px) rotate(-.2deg); }
+  40%      { transform: translateX(4px) rotate(.3deg); }
+  50%      { transform: translateX(-2px) rotate(-.1deg); }
+  60%      { transform: translateX(3px) rotate(.2deg); }
+  70%      { transform: translateX(-1px); }
+  80%      { transform: translateX(2px); }
+}
+
+#lightning-overlay.strike {
+  animation: lightning-flash .9s ease-out forwards;
+}
+#lightning-bolt.strike {
+  animation: bolt-flash .9s ease-out forwards;
+}
+#ferryman.rumble {
+  animation: ferryman-rumble .55s ease-out;
+}
+
+/* Lightning button — dark skin only */
+#btn-lightning {
+  display: none;
+  position: fixed;
+  bottom: 86px;
+  right: 18px;
+  z-index: 900;
+  background: rgba(10,5,2,.88);
+  border: 1px solid rgba(160,80,0,.35);
+  border-radius: 50%;
+  width: 42px; height: 42px;
+  font-size: 20px;
+  cursor: pointer;
+  align-items: center; justify-content: center;
+  box-shadow: 0 2px 16px rgba(0,0,0,.5), 0 0 12px rgba(160,80,0,.15);
+  transition: box-shadow .15s, border-color .15s;
+  color: #c8a040;
+}
+#btn-lightning:hover {
+  box-shadow: 0 2px 20px rgba(0,0,0,.6), 0 0 20px rgba(200,160,0,.3);
+  border-color: rgba(200,160,0,.5);
+}
+body.dark-skin #btn-lightning {
+  display: flex;
+}
+
 </style>
 </head>
 <body>
@@ -666,6 +757,25 @@ body.dark-skin #ferryman { display: block; }
 <div id="map-wrap">
   <div id="map"></div>
 </div>
+
+<!-- Lightning overlay -->
+<div id="lightning-overlay"></div>
+<svg id="lightning-bolt" viewBox="0 0 1400 600" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none">
+  <!-- Main jagged bolt -->
+  <polyline points="820,0 760,140 810,140 720,290 780,290 640,480 700,480 580,600"
+    fill="none" stroke="white" stroke-width="3" opacity=".9"/>
+  <polyline points="820,0 760,140 810,140 720,290 780,290 640,480 700,480 580,600"
+    fill="none" stroke="#b8e0ff" stroke-width="8" opacity=".35"/>
+  <!-- Branch bolt -->
+  <polyline points="780,290 850,370 820,370 880,440"
+    fill="none" stroke="white" stroke-width="2" opacity=".7"/>
+  <!-- Glow halo -->
+  <polyline points="820,0 760,140 810,140 720,290 780,290 640,480 700,480 580,600"
+    fill="none" stroke="white" stroke-width="18" opacity=".07"/>
+</svg>
+
+<!-- Lightning button -->
+<button id="btn-lightning" onclick="strikeLightning()" title="⚡">⚡</button>
 
 <!-- FETCH DROPDOWN -->
 <div id="fetch-wrap">
@@ -1998,6 +2108,7 @@ function toggleSkin() {
   if (ferryman) {
     if (isDark) {
       setTimeout(() => ferryman.classList.add('visible'), 100);
+      setTimeout(() => strikeLightning(), 700); // lightning after ferryman fades in
     } else {
       ferryman.classList.remove('visible');
     }
@@ -2135,13 +2246,73 @@ placeSaint = function(lat, lng, cog, sog, nav, apiTs, isStale) {
 (function() {
   const el = document.getElementById('ferryman');
   if (!el) return;
-  // Fade in after a short delay so it doesn't flash on load
   setTimeout(() => {
     if (document.body.classList.contains('dark-skin')) {
       el.classList.add('visible');
+      setTimeout(() => strikeLightning(), 400);
     }
   }, 600);
 })();
+
+
+// ── Lightning strike ─────────────────────────────────────────────────
+function strikeLightning() {
+  const overlay  = document.getElementById('lightning-overlay');
+  const bolt     = document.getElementById('lightning-bolt');
+  const ferryman = document.getElementById('ferryman');
+  const btn      = document.getElementById('btn-lightning');
+
+  // Reset then trigger
+  overlay.classList.remove('strike');
+  bolt.classList.remove('strike');
+  if (ferryman) ferryman.classList.remove('rumble');
+  btn.style.transform = 'scale(.9)';
+
+  // Force reflow
+  void overlay.offsetWidth;
+
+  overlay.classList.add('strike');
+  bolt.classList.add('strike');
+
+  // Rumble ferryman slightly after first flash
+  setTimeout(() => {
+    if (ferryman) ferryman.classList.add('rumble');
+    btn.style.transform = '';
+  }, 60);
+
+  // Thunder sound (Web Audio — short low rumble)
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    // Crack
+    const crack = ctx.createOscillator();
+    const crackGain = ctx.createGain();
+    crack.connect(crackGain); crackGain.connect(ctx.destination);
+    crack.type = 'sawtooth'; crack.frequency.setValueAtTime(80, ctx.currentTime);
+    crack.frequency.exponentialRampToValueAtTime(20, ctx.currentTime + .15);
+    crackGain.gain.setValueAtTime(.4, ctx.currentTime);
+    crackGain.gain.exponentialRampToValueAtTime(.001, ctx.currentTime + .15);
+    crack.start(); crack.stop(ctx.currentTime + .15);
+    // Rumble
+    const rumble = ctx.createOscillator();
+    const rumbleGain = ctx.createGain();
+    const filter = ctx.createBiquadFilter();
+    rumble.connect(filter); filter.connect(rumbleGain); rumbleGain.connect(ctx.destination);
+    rumble.type = 'sawtooth'; rumble.frequency.value = 55;
+    filter.type = 'lowpass'; filter.frequency.value = 120;
+    rumbleGain.gain.setValueAtTime(.0001, ctx.currentTime + .1);
+    rumbleGain.gain.exponentialRampToValueAtTime(.3, ctx.currentTime + .2);
+    rumbleGain.gain.exponentialRampToValueAtTime(.001, ctx.currentTime + 1.4);
+    rumble.start(ctx.currentTime + .1);
+    rumble.stop(ctx.currentTime + 1.5);
+  } catch(e) {}
+
+  // Clean up classes after animation
+  setTimeout(() => {
+    overlay.classList.remove('strike');
+    bolt.classList.remove('strike');
+    if (ferryman) ferryman.classList.remove('rumble');
+  }, 1000);
+}
 
 </script>
 </body>
