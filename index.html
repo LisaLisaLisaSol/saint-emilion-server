@@ -1207,11 +1207,24 @@ function tugIcon(color, size, label){
 
 function rotateMarker(mkr, deg){
   const el=mkr.getElement(); if(!el)return;
-  const svg=el.querySelector('svg'); if(!svg)return;
-  // Rotate only the SVG so the label above stays upright
-  svg.style.transform=`rotate(${deg}deg)`;
-  svg.style.transformOrigin='center center';
-  svg.style.display='block'; // ensure transform applies correctly
+  // Rotate the inner wrapper div (contains SVG) so the whole icon rotates
+  // But counter-rotate the label so it stays readable
+  const wrapper = el.querySelector('div[style*="position:relative"]');
+  const svg = el.querySelector('svg');
+  const label = el.querySelector('div[style*="position:absolute"]');
+  if (wrapper) {
+    wrapper.style.transform = `rotate(${deg}deg)`;
+    wrapper.style.transformOrigin = 'center center';
+  } else if (svg) {
+    svg.style.transform = `rotate(${deg}deg)`;
+    svg.style.transformOrigin = 'center center';
+    svg.style.display = 'block';
+  }
+  // Keep label upright by counter-rotating it
+  if (label) {
+    label.style.transform = `translateX(-50%) rotate(${-deg}deg)`;
+    label.style.transformOrigin = 'center center';
+  }
 }
 
 // ── State ─────────────────────────────────────────────────────────────
@@ -1236,7 +1249,8 @@ function placeSaint(lat, lng, cog, sog, nav, apiTs, isStale){
   if(!saintMarker){
     lkMarker.remove();
     saintMarker=L.marker(ll,{icon:tugIcon(markerColor,52,'ST. EMILION'),zIndexOffset:9999}).addTo(map);
-    if(followMode && !isStale) map.setView(ll,13);
+    // Auto-zoom in on first real fix
+    map.setView(ll, isStale ? 10 : 13, {animate:true, duration:1.2});
   } else {
     saintMarker.setLatLng(ll);
     saintMarker.setIcon(tugIcon(markerColor,52,'ST. EMILION'));
@@ -1442,7 +1456,7 @@ function deadReckon() {
   const el = drMarker.getElement();
   if (el) {
     const svg = el.querySelector('svg');
-    if (svg) { svg.style.transform = `rotate(${lastFix.cog}deg)`; svg.style.transformOrigin = 'center'; }
+    if (drMarker) { rotateMarker(drMarker, lastFix.cog); }
     const lbl = el.querySelector('#dr-label');
     if (lbl) lbl.textContent = `EST +${ageMin}m`;
   }
@@ -1614,7 +1628,20 @@ async function fetchLivePosition(){
         const t = new Date(parsed.updated);
         apiTs = isNaN(t.getTime()) ? null : t.getTime();
       }
-      placeSaintAndRecord(parsed.lat, parsed.lng, parsed.cog||0, parsed.sog||0, parsed.nav||'Unknown', apiTs, isStale);
+      // Normalize nav status from various API formats
+      const rawNav = parsed.nav || '';
+      let navStatus = 'Underway';
+      if (typeof rawNav === 'string') {
+        const n = rawNav.toLowerCase();
+        if (n.includes('anchor')) navStatus = 'At Anchor';
+        else if (n.includes('moor')) navStatus = 'Moored';
+        else if (n.includes('under way') || n.includes('underway') || n.includes('engine') || n.includes('pushing') || n.includes('towing')) navStatus = 'Underway';
+        else if (n.includes('fishing')) navStatus = 'Fishing';
+        else if (n.includes('sailing')) navStatus = 'Sailing';
+        else if (n === 'unknown' || n === '') navStatus = parsed.sog > 0.5 ? 'Underway' : 'Moored';
+        else navStatus = rawNav;
+      }
+      placeSaintAndRecord(parsed.lat, parsed.lng, parsed.cog||0, parsed.sog||0, navStatus, apiTs, isStale);
 
       // Update header last-pos strip
       document.getElementById('lp-loc').textContent = (parsed.location || `${parsed.lat.toFixed(4)}°N ${Math.abs(parsed.lng).toFixed(4)}°W`) + (isStale ? ' · last known' : '');
@@ -1627,6 +1654,7 @@ async function fetchLivePosition(){
       } else {
         status.textContent = 'Position updated — ' + (parsed.location||'');
       document.getElementById('ft-dot').className='ft-dot live';
+      renderRoutes(); // refresh voyage tab with current position
         log(`Position: ${parsed.lat.toFixed(4)}°N ${Math.abs(parsed.lng).toFixed(4)}°W · ${parsed.sog} kn · ${parsed.nav}`);
       }
 
@@ -1713,6 +1741,43 @@ function replayRoute(route, btn){
 // ── Render routes ─────────────────────────────────────────────────────
 function renderRoutes(){
   const wrap=document.getElementById('route-list');
+  if(!wrap) return;
+  wrap.innerHTML=''; // always clear first — prevents duplicates
+
+  // ── Current voyage card ───────────────────────────────────────────
+  if(lastFix && lastFix.lat && lastFix.sog > 0.3) {
+    const depName = document.getElementById('inp-start')?.value || 'Unknown departure';
+    const destName = document.getElementById('inp-dest')?.value || '';
+    const dh = document.getElementById('v-eta')?.textContent || '—';
+    const distEl = document.getElementById('v-eta-sub')?.textContent || '';
+    const div = document.createElement('div');
+    div.className = 'route current-voyage';
+    div.style.cssText = 'border-left:3px solid var(--accent);padding-left:10px;margin-bottom:10px';
+    div.innerHTML = `
+      <div class="route-left">
+        <div class="route-name" style="font-size:11px;color:var(--accent);margin-bottom:3px;letter-spacing:.06em;text-transform:uppercase;font-weight:700">Active Voyage</div>
+        <div class="route-name">
+          <span class="route-dot" style="background:var(--accent)"></span>
+          ${depName}${destName ? ' → ' + destName : ' → Southbound'}
+        </div>
+        <div class="route-meta">${lastFix.sog.toFixed(1)} kn · ${Math.round(lastFix.cog)}° · ${lastFix.nav||'Underway'}</div>
+        ${dh !== '—' ? `<div class="route-meta" style="color:var(--accent)">ETA ${dh} · ${distEl}</div>` : ''}
+      </div>`;
+    wrap.appendChild(div);
+    // divider
+    const rule = document.createElement('div');
+    rule.style.cssText = 'border-bottom:1px solid var(--rule);margin:8px 0 10px';
+    wrap.appendChild(rule);
+  }
+
+  // ── Historical voyages ────────────────────────────────────────────
+  if(!ROUTES.length) {
+    const empty = document.createElement('div');
+    empty.style.cssText = 'font-size:11px;color:var(--muted);padding:6px 0';
+    empty.textContent = 'No saved voyages yet.';
+    wrap.appendChild(empty);
+    return;
+  }
   ROUTES.forEach(r=>{
     const div=document.createElement('div'); div.className='route';
     div.innerHTML=`
