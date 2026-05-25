@@ -405,7 +405,13 @@ async function fetchVoyageData() {
         }
       }
     }
-    if (portCalls.length) data.recentPorts = portCalls;
+    if (portCalls.length) {
+      data.recentPorts = portCalls;
+      // Use first recent port as departure if not already found
+      if (!data.departurePort && portCalls.length > 0) {
+        data.departurePort = portCalls[0];
+      }
+    }
 
     // ── Nav status ────────────────────────────────────────────────
     const navMatch = html.match(/Pushing Ahead|Under way|Moored|At Anchor|Underway/i);
@@ -414,6 +420,17 @@ async function fetchVoyageData() {
     // ── Draught ───────────────────────────────────────────────────
     const draughtMatch = html.match(/Draught[^<]*[\s\S]{0,50}?([\d.]+)\s*m/i);
     if (draughtMatch) data.draught = parseFloat(draughtMatch[1]);
+
+    // Derive departure time from timeTraveled if not found directly
+    if (!data.departureTime && data.timeTraveled) {
+      const hoursMatch = data.timeTraveled.match(/([\d.]+)\s*h/);
+      if (hoursMatch) {
+        const hrs = parseFloat(hoursMatch[1]);
+        const depTime = new Date(now - hrs * 3600000);
+        data.departureTime = depTime.toISOString().replace('T',' ').slice(0,16) + ' UTC';
+        data.departureTimeDerived = true; // flag that it was calculated not scraped
+      }
+    }
 
     data.source = 'myshiptracking.com';
     data.fetchedAt = new Date().toISOString();
@@ -426,6 +443,164 @@ async function fetchVoyageData() {
 
   } catch(e) {
     console.error('Voyage fetch error:', e.message);
+    return null;
+  }
+}
+
+
+// ── Voyage history from track API ────────────────────────────────────────────
+let voyageHistoryCache = null;
+let voyageHistoryCacheTs = 0;
+const HISTORY_CACHE_MS = 60 * 60 * 1000; // 1 hour — expensive endpoint
+
+async function fetchVoyageHistory() {
+  const now = Date.now();
+  if (voyageHistoryCache && (now - voyageHistoryCacheTs) < HISTORY_CACHE_MS) {
+    return voyageHistoryCache;
+  }
+  if (!MYSHIPTRACK_KEY) return null;
+
+  console.log('Fetching voyage history from MyShipTracking track API...');
+
+  try {
+    // Fetch last 30 days, one position per hour to minimize credits
+    const toDate = new Date().toISOString().split('T')[0];
+    const fromDate = new Date(now - 30*24*3600000).toISOString().split('T')[0];
+    const url = `https://api.myshiptracking.com/api/v2/vessel/track?mmsi=${MMSI}&timegroup=60&dtstart=${fromDate}&dtend=${toDate}`;
+
+    const r = await httpGet(url, {
+      'Authorization': `Bearer ${MYSHIPTRACK_KEY}`,
+      'User-Agent': 'SaintEmilionTracker/1.0'
+    });
+
+    if (r.status !== 200) {
+      console.log('Track API error:', r.status, r.body.slice(0,100));
+      return null;
+    }
+
+    const data = JSON.parse(r.body);
+    if (data.status !== 'success' || !data.data || !data.data.length) {
+      console.log('Track API: no data');
+      return null;
+    }
+
+    const positions = data.data;
+    console.log(`Track API: ${positions.length} positions received`);
+
+    // Parse into voyages by detecting mooring events
+    // A voyage starts when speed goes from 0 → >1 kn
+    // A voyage ends when speed goes from >1 kn → 0 for sustained period
+    const voyages = [];
+    let currentVoyage = null;
+    let mooredCount = 0;
+
+    const HUDSON_PORTS = [
+      {name:'Albany Oil Terminal', lat:42.6512, lng:-73.7550},
+      {name:'Yonkers Anchorage', lat:40.9340, lng:-73.8950},
+      {name:'Bayonne Terminal', lat:40.6574, lng:-74.1130},
+      {name:'Gowanus Bay Terminal', lat:40.6520, lng:-74.0170},
+      {name:'Phillips 66 Linden Terminal', lat:40.6200, lng:-74.2300},
+      {name:'Port Imperial Weehawken', lat:40.7680, lng:-74.0200},
+      {name:'GW Bridge Anchorage', lat:40.8510, lng:-73.9520},
+      {name:'Haverstraw Bay Anchorage', lat:41.2100, lng:-73.9500},
+      {name:'Kingston Oil Dock', lat:41.9230, lng:-73.9750},
+      {name:'New Hamburg Dock', lat:41.5800, lng:-73.9700},
+      {name:'Newburgh Waterfront', lat:41.5030, lng:-74.0080},
+    ];
+
+    function nearestPort(lat, lng) {
+      let best = null, bestDist = 999;
+      HUDSON_PORTS.forEach(p => {
+        const d = Math.sqrt((p.lat-lat)**2+(p.lng-lng)**2)*60;
+        if (d < bestDist) { bestDist = d; best = p; }
+      });
+      return bestDist < 5 ? best : null; // within 5nm
+    }
+
+    for (let i = 0; i < positions.length; i++) {
+      const p = positions[i];
+      const sog = parseFloat(p.speed || p.sog || 0);
+      const lat = parseFloat(p.lat);
+      const lng = parseFloat(p.lng || p.lon);
+      const ts = new Date(p.received || p.timestamp).getTime();
+
+      if (sog > 1) {
+        mooredCount = 0;
+        if (!currentVoyage) {
+          // Start new voyage
+          currentVoyage = {
+            startTs: ts,
+            startLat: lat, startLng: lng,
+            startPort: nearestPort(lat, lng),
+            positions: [{lat, lng, ts, sog}],
+            totalNm: 0
+          };
+        } else {
+          // Add to current voyage
+          const prev = currentVoyage.positions[currentVoyage.positions.length-1];
+          const segNm = Math.sqrt((lat-prev.lat)**2+(lng-prev.lng)**2)*60;
+          currentVoyage.totalNm += segNm;
+          currentVoyage.positions.push({lat, lng, ts, sog});
+          currentVoyage.endTs = ts;
+          currentVoyage.endLat = lat;
+          currentVoyage.endLng = lng;
+        }
+      } else {
+        mooredCount++;
+        if (currentVoyage && mooredCount >= 2) {
+          // Vessel has been moored for 2+ hours — end voyage
+          const endPort = nearestPort(currentVoyage.endLat || lat, currentVoyage.endLng || lng);
+          const durationHrs = ((currentVoyage.endTs || ts) - currentVoyage.startTs) / 3600000;
+          const avgSpeed = durationHrs > 0 ? currentVoyage.totalNm / durationHrs : 0;
+
+          if (currentVoyage.totalNm > 5) { // ignore tiny movements
+            const startDate = new Date(currentVoyage.startTs);
+            const endDate = new Date(currentVoyage.endTs || ts);
+            voyages.push({
+              name: `${currentVoyage.startPort?.name || 'Unknown'} → ${endPort?.name || 'Unknown'}`,
+              startPort: currentVoyage.startPort?.name || 'Unknown',
+              endPort: endPort?.name || 'Unknown',
+              startTs: currentVoyage.startTs,
+              endTs: currentVoyage.endTs || ts,
+              date: startDate.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}),
+              dateEnd: endDate.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}),
+              distNm: Math.round(currentVoyage.totalNm * 10) / 10,
+              avgSpeed: Math.round(avgSpeed * 10) / 10,
+              color: '#0095b0',
+              track: currentVoyage.positions.map(p => [p.lat, p.lng])
+            });
+          }
+          currentVoyage = null;
+          mooredCount = 0;
+        }
+      }
+    }
+
+    // Add in-progress voyage if vessel is currently underway
+    if (currentVoyage && currentVoyage.totalNm > 1) {
+      voyages.push({
+        name: `${currentVoyage.startPort?.name || 'Unknown'} → In Progress`,
+        startPort: currentVoyage.startPort?.name || 'Unknown',
+        endPort: null,
+        startTs: currentVoyage.startTs,
+        date: new Date(currentVoyage.startTs).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}),
+        distNm: Math.round(currentVoyage.totalNm * 10) / 10,
+        live: true,
+        color: '#16a050',
+        track: currentVoyage.positions.map(p => [p.lat, p.lng])
+      });
+    }
+
+    // Most recent first
+    voyages.reverse();
+    console.log(`Parsed ${voyages.length} voyages from track data`);
+
+    voyageHistoryCache = voyages;
+    voyageHistoryCacheTs = now;
+    return voyages;
+
+  } catch(e) {
+    console.error('Voyage history error:', e.message);
     return null;
   }
 }
@@ -448,6 +623,18 @@ const httpServer = http.createServer(async (req, res) => {
       aisCacheAge: aisCache ? Math.round((Date.now()-aisCache.ts)/1000)+'s ago' : 'none',
       lastScrape: lastScrapeTs ? new Date(lastScrapeTs).toISOString() : 'never'
     }));
+    return;
+  }
+
+  // Voyage history endpoint
+  if (req.method === 'GET' && req.url === '/history') {
+    try {
+      const data = await fetchVoyageHistory();
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(data || []));
+    } catch(e) {
+      res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
+    }
     return;
   }
 
