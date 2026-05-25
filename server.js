@@ -451,7 +451,7 @@ async function fetchVoyageData() {
 // ── Voyage history from track API ────────────────────────────────────────────
 let voyageHistoryCache = null;
 let voyageHistoryCacheTs = 0;
-const HISTORY_CACHE_MS = 60 * 60 * 1000; // 1 hour — expensive endpoint
+const HISTORY_CACHE_MS = 6 * 60 * 60 * 1000; // 6 hours — expensive endpoint, cache aggressively
 
 async function fetchVoyageHistory() {
   const now = Date.now();
@@ -465,8 +465,10 @@ async function fetchVoyageHistory() {
   try {
     // Fetch last 30 days, one position per hour to minimize credits
     const toDate = new Date().toISOString().split('T')[0];
-    const fromDate = new Date(now - 30*24*3600000).toISOString().split('T')[0];
-    const url = `https://api.myshiptracking.com/api/v2/vessel/track?mmsi=${MMSI}&timegroup=60&dtstart=${fromDate}&dtend=${toDate}`;
+    const fromDate = new Date(now - 14*24*3600000).toISOString().split('T')[0];
+    // timegroup=120 = one position per 2hrs, minimizes records + cost (5 credits/date)
+    // 14 days = max 14 dates = 70 credits from 2000 trial
+    const url = `https://api.myshiptracking.com/api/v2/vessel/track?mmsi=${MMSI}&timegroup=120&dtstart=${fromDate}&dtend=${toDate}`;
 
     const r = await httpGet(url, {
       'Authorization': `Bearer ${MYSHIPTRACK_KEY}`,
@@ -547,7 +549,7 @@ async function fetchVoyageHistory() {
         }
       } else {
         mooredCount++;
-        if (currentVoyage && mooredCount >= 2) {
+        if (currentVoyage && mooredCount >= 1) { // 1 gap = 2hrs moored with timegroup=120
           // Vessel has been moored for 2+ hours — end voyage
           const endPort = nearestPort(currentVoyage.endLat || lat, currentVoyage.endLng || lng);
           const durationHrs = ((currentVoyage.endTs || ts) - currentVoyage.startTs) / 3600000;
