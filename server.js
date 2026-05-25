@@ -358,16 +358,13 @@ async function fetchVoyageData() {
     }
 
     // ── Departure via ATD field ───────────────────────────────────
-    const atdMatch = html.match(/ATD\s*[
-
-\s]*(?:<[^>]+>)*\s*([\d-]+ [\d:]+)/i);
+    const atdMatch = html.match(/ATD[\s\S]{0,50}?([\d-]+ [\d:]+)/i);
     if (atdMatch && !data.departureTime) {
       data.departureTime = atdMatch[1].trim() + ' UTC';
     }
 
     // ── Departure port via "PORT DEPARTURE" event row ─────────────
-    const deptPortMatch = html.match(/PORT DEPARTURE[\s\S]{0,200}?([A-Z]{2}[A-Z ]{2,30})\s*
-/);
+    const deptPortMatch = html.match(/PORT DEPARTURE[\s\S]{0,200}?([A-Z]{2}[A-Z ]{2,30})/);
     if (deptPortMatch && !data.departurePort) {
       data.departurePort = deptPortMatch[1].trim();
     }
@@ -397,7 +394,6 @@ async function fetchVoyageData() {
 
     // ── Last port calls (extract table rows) ──────────────────────
     const portCalls = [];
-    const portRegex = /([A-Z][A-Z ]{2,20})\s*[\s\S]{0,30}?([\d-]+ [\d:]+)\s*[\s\S]{0,10}?([\d-]+ [\d:]+)?/g;
     const pcSection = html.match(/Last Port Calls[\s\S]{0,3000}/i);
     if (pcSection) {
       const rowMatches = pcSection[0].matchAll(/ALBANY|NEW YORK|YONKERS|BAYONNE|PERTH AMBOY|LINDEN/gi);
