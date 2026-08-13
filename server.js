@@ -44,6 +44,7 @@ function respond(res, data) {
 
 // ── aisstream passive WebSocket cache ────────────────────────────────────────
 let aisCache     = null;
+let aisStatic    = null; // ShipStaticData: destination, ETA, draught
 let aisConnected = false;
 let aisWs        = null;
 
@@ -62,7 +63,7 @@ function connectAisstream() {
       Apikey: AISSTREAM_KEY,
       BoundingBoxes: [[[-90,-180],[90,180]]],
       FiltersShipMMSI: [MMSI],
-      FilterMessageTypes: ['PositionReport']
+      FilterMessageTypes: ['PositionReport', 'ShipStaticData']
     }));
   });
 
@@ -70,6 +71,21 @@ function connectAisstream() {
     try {
       const msg = JSON.parse(data.toString());
       if (msg.error || msg.Error) return;
+      if (msg.MessageType === 'ShipStaticData') {
+        const sd = msg.Message.ShipStaticData;
+        const meta = msg.MetaData || {};
+        if (sd) {
+          aisStatic = {
+            destination: (sd.Destination || '').trim().replace(/[^A-Z0-9 /-]/gi,''),
+            eta: sd.Eta ? `${sd.Eta.Month}/${sd.Eta.Day} ${String(sd.Eta.Hour).padStart(2,'0')}:${String(sd.Eta.Minute).padStart(2,'0')}` : null,
+            draught: sd.MaximumStaticDraught || null,
+            vesselName: sd.Name || 'SAINT EMILION',
+            ts: Date.now()
+          };
+          console.log('aisstream static data:', JSON.stringify(aisStatic));
+        }
+      }
+
       if (msg.MessageType === 'PositionReport') {
         const pr  = msg.Message.PositionReport;
         const lat = pr.Latitude, lng = pr.Longitude;
@@ -358,9 +374,22 @@ async function fetchVoyageData() {
     }
 
     // ── Departure via ATD field ───────────────────────────────────
-    const atdMatch = html.match(/ATD[\s\S]{0,50}?([\d-]+ [\d:]+)/i);
+    // ATD — try multiple patterns
+    const atdMatch = html.match(/ATD[\s\S]{0,50}?([\d-]+ [\d:]+)/i) ||
+                     html.match(/Actual Time of Departure[\s\S]{0,50}?([\d-]+ [\d:]+)/i) ||
+                     html.match(/([\d]{4}-[\d]{2}-[\d]{2}\s+[\d]{2}:[\d]{2})/);
     if (atdMatch && !data.departureTime) {
       data.departureTime = atdMatch[1].trim() + ' UTC';
+    }
+    // Also grab reported ETA from page
+    const etaMatch = html.match(/Reported ETA[\s\S]{0,50}?([\d-]+ [\d:]+)/i) ||
+                     html.match(/ETA[^<]{0,5}<[^>]+>\s*([\d-]+ [\d:]+)/i);
+    if (etaMatch) data.reportedEta = etaMatch[1].trim() + ' UTC';
+    // Departure port from "US NYC" style
+    const portCodeMatch = html.match(/US\s+([A-Z]{2,4})\b/);
+    if (portCodeMatch && !data.departurePort) {
+      const codes = {'NYC':'New York','ALB':'Albany','EWR':'Newark','PHI':'Philadelphia'};
+      data.departurePort = codes[portCodeMatch[1]] || portCodeMatch[1];
     }
 
     // ── Departure port via "PORT DEPARTURE" event row ─────────────
@@ -632,7 +661,8 @@ const httpServer = http.createServer(async (req, res) => {
       mode: usingAPI ? `MyShipTracking API (${daysLeft} days left)` : 'scrape fallback',
       aisstream: aisConnected ? 'connected' : 'disconnected',
       aisCacheAge: aisCache ? Math.round((Date.now()-aisCache.ts)/1000)+'s ago' : 'none',
-      lastScrape: lastScrapeTs ? new Date(lastScrapeTs).toISOString() : 'never'
+      lastScrape: lastScrapeTs ? new Date(lastScrapeTs).toISOString() : 'never',
+      staticData: aisStatic || null
     }));
     return;
   }
